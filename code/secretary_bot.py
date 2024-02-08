@@ -9,6 +9,7 @@ import chat_tools as ct
 import pandas as pd
 from tabulate import tabulate
 import re
+from io import StringIO
 
 load_dotenv()
 
@@ -38,24 +39,40 @@ app = App(token=SLACK_BOT_TOKEN)
 #       b. If they are non-secretary tasks, embed the updated task.
 
 # Buuut...
-# What about orphaned tasks? For example if user says "I bought eggs" this might not be identified as an action item.
-# Then it would not be used to update the relevant task. Should the entire comment be given to gpt to ask if it 
-# should be used to update existing tasks? Can we ask gpt to identify content in messages that is not part of the
-# identified action items?
-# Maybe we:
-# first use the whole comment to update retrieved tasks, 
-# then identify action items in comment,
-# then identify and execute secretary tool actions,
-# then ask if the remaining new tasks are redundant with existing tasks.
+# This could result in orphaned tasks. For example, if the user says "I bought eggs" this might not be identified as an action item,
+# and so it would not be used to update the relevant task. Should the entire comment be given to gpt to ask if it 
+# should be used to update existing tasks?
+
+# Another version of interaction flow:
+# 1. Use the whole comment to update retrieved tasks.
+#       a. Retrieve semantically similar tasks.
+#       b. Provide these in json format to gpt along with new user coment and ask it to update the task(s) based on the comment [PROMPT: update_tasks].
+#       c. Provide the original and updated task(s) to user for confirmation of update.
+#       d. If user confirms, replace old task(s) with updated task(s) and reembed the updated task(s).
+# 2. Extract tasks from comment [PROMPT: extract_action_items].
+# 3. Iterate over new tasks for the secretary.
+#       a. First ask gpt to select a tool [PROMPT: select_secretary_task_tool].
+#          Secretary tools: show_tasks([all, open, closed, for_actor, from_requestor, due_by(date)]),
+#       b. Execute specified tools.
+#       c. If no tool is identified for the secretary task, report to the user 'Sorry, I don't know how to do that.'
+# 4. Iterate over new non-secretary tasks.
+#       a. For each task, find semantically similar existing tasks. These should now have information from the comment incorporated into them via the updating process in step 1.
+#       b. Provide these related existing tasks, along with new task, to gpt and ask if the new tasks is redundant to or a subset of any of the existing tasks [PROMPT: is_new_task_redundant].
+#       c. If the new tasks is redundant, show it to the user and ask for confirmation. If the user confirms, throw away the new task.
+#       d. If the new task is not redundant, add it to the task database and embed it.
+
+# An alternative to step 4 would be to ask gpt, as part of step 1b, to also 
+# return a version of the comment with the information used to update the 
+# existing task(s) stripped out. This would probably be pretty error prone though.
 
 client = OpenAI(
     # Defaults to os.environ.get("OPENAI_API_KEY")
-    # Otherwise use: api_key="Your_API_Key",
+    # Otherwise use: api_key="API_Key",
 )
 
-database = pd.DataFrame(columns=['topic', 'type', 'date', 'requestor', 'actor', 'summary', 'details'])
+database = pd.DataFrame(columns=['topic', 'type', 'date', 'requestor', 'actor', 'summary', 'details', 'embedding'])
 
-def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, tool_choice=None, temperature=0):
+def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, tool_choice=None, temperature=0, force_json:bool=True):
     model = 'gpt-4-1106-preview'
 
     models = {'gpt-3.5': 'gpt-3.5-turbo-1106',
@@ -69,6 +86,11 @@ def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, t
     if tool_choice is not None and tool_choice != 'auto':
         tool_choice = {"type": "function", "function": {"name": tool_choice}}
         
+    if force_json:
+        response_format = { "type": "json_object" }
+    else:
+        response_format = None
+
     max_characters = int(model_max_tokens[model] * 0.9 * 4) #90% of max to allow for some deviation from the nominal 4 characters/token 
     if len(comment) > max_characters:
         completion = f'Could not get a completion because the number of characters ({len(comment)}) exceeds the max allowed ({max_characters}).'
@@ -81,8 +103,9 @@ def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, t
                                                     messages=[
                                                         {"role": "system", "content": system_message},
                                                         {"role": "user", "content": comment}
-                                                    ]
-        )
+                                                    ],
+                                                    response_format=response_format
+                                                    )
     return completion.choices[0].message.content, completion.choices[0].message.tool_calls
 
 # def parse_direct_mention(message_text):
@@ -94,10 +117,19 @@ def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, t
 #     # the first group contains the username, the second group contains the remaining message
 #     return (matches.group(1), matches.group(2).strip()) if matches else (None, message_text)
 
-def update_database(json_string):
+def get_df_row_embedding(row):
+    json = row.to_json()
+    return client.embeddings.create(input = json, model="text-embedding-3-small")
+
+def add_to_database(json_string):
     global database
-    df = pd.read_json(json_string, orient='records')
+    df = pd.read_json(StringIO(json_string), orient='records')
+    # embed new tasks
+    df['embedding'] = df.apply(get_df_row_embedding, axis=1)
     database = pd.concat([database, df], ignore_index=True)
+
+# Were we to update the embedding on a selection of rows we could do:
+# df.loc[condition, :] = df.loc[condition, :].apply(apply_function, axis=1)
 
 def split_string_on_newline(s, n):
     lines = s.split('\n')
@@ -124,6 +156,14 @@ def split_table_into_rows(table_str):
     header = lines[0] + '├' + lines[1] + '┤\n'
     return header, lines[2::2]
 
+def say_dataframe(say, df):
+    database_str = tabulate(df, headers='keys', tablefmt='rounded_grid', maxcolwidths=50)
+    header, rows = split_table_into_rows(database_str)
+    for i, row in enumerate(rows):
+        if i==0:
+            row = header + row
+        say(f"```{row}```") # three backticks formats the message as code block
+
 def get_user_name(userID):
     #TODO implement a cache of user names here
     uname = app.client.users_profile_get(user=userID) 
@@ -132,17 +172,12 @@ def get_user_name(userID):
 def handle_message(message, say):
     user_name = get_user_name(message['user'])
     msg = f"From: {user_name}\n{message['text']}"
-    response, _ = get_completion(comment=msg, system_message=sm.extract_action_items, model_class='gpt-4')
-    response, _ = get_completion(response, system_message=sm.correct_json_syntax, model_class='gpt-3.5')
-    update_database(response)
+    response, _ = get_completion(comment=msg, system_message=sm.extract_action_items, model_class='gpt-4', force_json=False)
+    # response, _ = get_completion(response, system_message=sm.correct_json_syntax, model_class='gpt-3.5')
+    add_to_database(response)
     global database
     if database.shape[0]>0:
-        database_str = tabulate(database, headers='keys', tablefmt='rounded_grid', maxcolwidths=50)
-        header, rows = split_table_into_rows(database_str)
-        for i, row in enumerate(rows):
-            if i==0:
-                row = header + row
-            say(f"```{row}```") # three backticks formats the message as code block
+        say_dataframe(say, database.drop(columns=['embedding']))
         
 @app.event("message")
 def handle_message_events(body, say):

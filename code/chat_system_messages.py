@@ -19,26 +19,26 @@ The requestor and requestee may be mentioned in the text itself. It is possible 
 '''
 
 extract_action_items = '''You should extract all questions and action items from the text and structure it as json array.
-Format each action item into a json array formatted like this:
+Each action item should be formatted as json object and all the action items should be in a json array exactly like this:
 
 [
-{
-topic: <whatever the topic is>,
-type: <one of [question, action_item]>,
-date: <the due date, if any>,
-requestor: <the person(s) the request is coming from>,
-actor: <who should do the thing>,
-summary: <a very concise summary of the item>,
-details: <direct quotes of all relevant information in the text needed to complete the task>
-},
-{
-<next action items if any>
-}
+  {
+    topic: <whatever the topic is>,
+    type: <one of [question, action_item]>,
+    date: <the due date, if any>,
+    requestor: <the person(s) the request is coming from>,
+    actor: <who should do the thing>,
+    summary: <a very concise summary of the item>,
+    details: <direct quotes of all relevant information in the text needed to complete the task>
+  },
+  {
+    <next action item, if any>
+  }
 ]
 
 Some guidance:
-You must return valid json and nothing else.
-If a value is not known, it should be "none".
+You must return a valid json array and nothing else.
+If any value is not known, it should be "none".
 Action items can be requests, questions, or things people need to do. There may be just one simple action item.
 Reuse the same topic as much as possible.
 The requestor and actor may be mentioned in the text itself, or they may be the sender of the text.
