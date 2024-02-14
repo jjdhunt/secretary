@@ -38,7 +38,7 @@ Each action item should be formatted as json object and all the action items sho
 
 Some guidance:
 You must return a valid json array and nothing else.
-If any value is not known, it should be "none".
+If any value is not known, it should be "NaN".
 Action items can be requests, questions, or things people need to do. There may be just one simple action item.
 Reuse the same topic as much as possible.
 The requestor and actor may be mentioned in the text itself, or they may be the sender of the text.

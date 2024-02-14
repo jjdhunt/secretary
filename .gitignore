@@ -1,4 +1,7 @@
+# macOS 
+**/.DS_Store
 
+# Python
 __pycache__
 *.py[cod]
 *$py.class
@@ -27,9 +30,11 @@ pip-log.txt
 pip-delete-this-directory.txt
 *.log
 
-# Jupyter Notebook
+# Pytest
+.pytest_cache/
+
+# Jupyter
 .ipynb_checkpoints
-sandbox.ipynb
 
 # IPython
 profile_default/
@@ -37,7 +42,7 @@ ipython_config.py
 
 # Environment
 .env
-.venv
+.venv/
 env/
 venv/
 ENV/

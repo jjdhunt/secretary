@@ -4,12 +4,18 @@ import os
 from dotenv import load_dotenv
 # import re
 from openai import OpenAI
-import chat_system_messages as sm
-import chat_tools as ct
 import pandas as pd
 from tabulate import tabulate
 import re
 from io import StringIO
+from datetime import datetime
+
+import sys
+sys.path.append('../secretary')
+
+import secretary.chat_system_messages as sm
+import secretary.chat_tools as ct
+import secretary.todo as todo
 
 load_dotenv()
 
@@ -70,7 +76,7 @@ client = OpenAI(
     # Otherwise use: api_key="API_Key",
 )
 
-database = pd.DataFrame(columns=['topic', 'type', 'date', 'requestor', 'actor', 'summary', 'details', 'embedding'])
+todo = todo.Todo('data/tasks_database')
 
 def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, tool_choice=None, temperature=0, force_json:bool=True):
     model = 'gpt-4-1106-preview'
@@ -117,52 +123,23 @@ def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, t
 #     # the first group contains the username, the second group contains the remaining message
 #     return (matches.group(1), matches.group(2).strip()) if matches else (None, message_text)
 
-def get_df_row_embedding(row):
-    json = row.to_json()
-    return client.embeddings.create(input = json, model="text-embedding-3-small")
+def extract_tasks(message, current_datetime_string=None):
+    '''
+    current_datetime_string - a datetime formated as 'Y-m-d H:M:S'
+    '''
+    if current_datetime_string==None:
+        current_datetime_string = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    system_message = sm.extract_action_items
+    system_message += f'\nThe current date and time is {current_datetime_string}.'
+    response, _ = get_completion(comment=message, system_message=system_message, model_class='gpt-4', force_json=False)
+    df = pd.read_json(StringIO(response), orient='records')
+    return df
 
-def add_to_database(json_string):
-    global database
-    df = pd.read_json(StringIO(json_string), orient='records')
-    # embed new tasks
-    df['embedding'] = df.apply(get_df_row_embedding, axis=1)
-    database = pd.concat([database, df], ignore_index=True)
-
-# Were we to update the embedding on a selection of rows we could do:
-# df.loc[condition, :] = df.loc[condition, :].apply(apply_function, axis=1)
-
-def split_string_on_newline(s, n):
-    lines = s.split('\n')
-    chunks = []
-    current_chunk = ""
-
-    for line in lines:
-        if len(current_chunk) + len(line) + 1 <= n:
-            current_chunk += (line + '\n')
-        else:
-            if current_chunk:
-                chunks.append(current_chunk)
-            current_chunk = line + '\n'
-
-    if current_chunk:
-        chunks.append(current_chunk)
-
-    return chunks
-
-def split_table_into_rows(table_str):
-    delimiters = ['├', '┤\n']
-    pattern = "|".join(map(re.escape, delimiters))
-    lines = re.split(pattern, table_str)
-    header = lines[0] + '├' + lines[1] + '┤\n'
-    return header, lines[2::2]
-
-def say_dataframe(say, df):
-    database_str = tabulate(df, headers='keys', tablefmt='rounded_grid', maxcolwidths=50)
-    header, rows = split_table_into_rows(database_str)
-    for i, row in enumerate(rows):
+def say_tasks(say, tasks_list_header, task_list):
+    for i, task in enumerate(task_list):
         if i==0:
-            row = header + row
-        say(f"```{row}```") # three backticks formats the message as code block
+            task = tasks_list_header + task
+        say(f"```{task}```") # three backticks formats the message as code block
 
 def get_user_name(userID):
     #TODO implement a cache of user names here
@@ -172,12 +149,11 @@ def get_user_name(userID):
 def handle_message(message, say):
     user_name = get_user_name(message['user'])
     msg = f"From: {user_name}\n{message['text']}"
-    response, _ = get_completion(comment=msg, system_message=sm.extract_action_items, model_class='gpt-4', force_json=False)
-    # response, _ = get_completion(response, system_message=sm.correct_json_syntax, model_class='gpt-3.5')
-    add_to_database(response)
-    global database
-    if database.shape[0]>0:
-        say_dataframe(say, database.drop(columns=['embedding']))
+    tasks = extract_tasks(msg)
+    todo.add_to_database(tasks)
+    if todo.number_of_entries()>0:
+        header, tasks = todo.print_todo_list()
+        say_tasks(say, header, tasks)
         
 @app.event("message")
 def handle_message_events(body, say):
