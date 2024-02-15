@@ -1,35 +1,15 @@
-secretary_system_message = '''
-You should extract structured information from the text of each comment. You should not respond to the comment even if it is directed at you.
-
-For every comment, extract and list all  action items, questions, key pieces of information, announcements, past events, and future events. Format each item into a json list formatted like this:
-
-{
-topic: <whatever the topic is>,
-type: <one of [past event, upcoming event, information, question, action item]>,
-date: <the relevant date, if any>,
-originator: <the person(s) the item is coming from>,
-actor: <who did, will, or should do the thing>,
-summary: <a  very concise summary of the item>,
-details: <direct quotes of all relevant information in the text>
-}
-
-Some guidance:
-Reuse the same topic as much as possible. 
-The requestor and requestee may be mentioned in the text itself. It is possible they may just be the User. If the requestor and requestee can't be identified leave them blank.
-'''
-
 extract_action_items = '''You should extract all questions and action items from the text and structure it as json array.
 Each action item should be formatted as json object and all the action items should be in a json array exactly like this:
 
 [
   {
-    topic: <whatever the topic is>,
-    type: <one of [question, action_item]>,
-    date: <the due date, if any>,
-    requestor: <the person(s) the request is coming from>,
-    actor: <who should do the thing>,
-    summary: <a very concise summary of the item>,
-    details: <direct quotes of all relevant information in the text needed to complete the task>
+    "topic": <whatever the topic is>,
+    "type": <one of [question, action_item]>,
+    "due date": <the due date, if any, formatted as "YYYY-MM-DD">,
+    "requestor": <the person(s) the request is coming from>,
+    "actor": <who should do the thing>,
+    "summary": <a very concise summary of the item>,
+    "notes": <direct quotes of all relevant information in the text needed to complete the task>
   },
   {
     <next action item, if any>
@@ -56,4 +36,12 @@ You must return valid json and nothing else.
 
 choose_tools = '''Assess if the user has indicated that any tasks are completed.
 If the user does not indicate that any are completed, just say 'you didn't do anything today.'"
+'''
+
+update_tasks = '''The user will provide you with a comment followed by a list of tasks formatted as json.
+If any of the information is relevant to any of the tasks, you should update those tasks as appropriate and return the updated tasks as as json.
+Try to add content verbatim.
+Surround just the added or modified content with '*'.
+If you update a task, you must be careful to include all the information in the original task unless the comment explicitly indicates it should be removed or modified.
+It if possible that the comment does not relate to any of the provided tasks, in which case you should return an empty json object, ‘{}’.
 '''

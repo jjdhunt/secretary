@@ -10,14 +10,13 @@ def test_extracting_a_simple_todo():
 
     df = sb.extract_tasks(message)
 
-    date_string = "2022-10-03 00:00:00"
-    datetime_object = pd.to_datetime(date_string)
+    date_string = "2022-10-03"
 
-    # gpt should capture the whole message contents as details since it is short.
-    assert df.loc[0, 'details'] == message_content
+    # gpt should capture the whole message contents as notes since it is short.
+    assert df.loc[0, 'notes'] == message_content
 
-    # gpt should extract the date.
-    assert df.loc[0, 'date'] == datetime_object
+    # gpt should extract the due date.
+    assert df.loc[0, 'due date'] == date_string
 
     # gpt should extract the requestor
     assert df.loc[0, 'requestor'] == 'Jack'
@@ -35,12 +34,12 @@ def test_inferring_a_date():
 
     message = "I need to buy eggs by before next Wednesday."
 
-    today = "2024-02-11 00:00:00" # A Sunday
-    next_wednesday = "2024-02-14 00:00:00"
+    today = "2024-02-11" # A Sunday
+    next_wednesday = "2024-02-14"
     df = sb.extract_tasks(message, current_datetime_string=today)
 
-    # gpt should capture the whole message details since it is short.
-    assert df.loc[0, 'details'] == message
+    # gpt should capture the whole message notes since it is short.
+    assert df.loc[0, 'notes'] == message
 
-    # gpt Should infer the date for "next Wednesday".
-    assert df.loc[0, 'date'] == pd.to_datetime(next_wednesday) 
+    # gpt Should infer the due date for "next Wednesday".
+    assert df.loc[0, 'due date'] == next_wednesday

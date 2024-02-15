@@ -24,6 +24,8 @@ SLACK_BOT_TOKEN = os.environ['SLACK_BOT_TOKEN']
 SLACK_APP_TOKEN = os.environ['SLACK_APP_TOKEN']
 app = App(token=SLACK_BOT_TOKEN)
 
+similar_task_threshold = 0.2 # a bit of ad-hoc testing showed about 0.2 is a good threshold
+
 # Interaction flow:
 # 1. User sends comment
 #       a.  To simplify things initially we will assume each comment is a complete thought.
@@ -76,7 +78,7 @@ client = OpenAI(
     # Otherwise use: api_key="API_Key",
 )
 
-todo = todo.Todo('data/tasks_database')
+todos = todo.Todo('data/tasks_database')
 
 def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, tool_choice=None, temperature=0, force_json:bool=True):
     model = 'gpt-4-1106-preview'
@@ -135,6 +137,20 @@ def extract_tasks(message, current_datetime_string=None):
     df = pd.read_json(StringIO(response), orient='records')
     return df
 
+def update_tasks(message, tasks_json, current_datetime_string=None):
+    '''
+    current_datetime_string - a datetime formated as 'Y-m-d H:M:S'
+    '''
+    if current_datetime_string==None:
+        current_datetime_string = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    system_message = sm.update_tasks
+    system_message += f'\nThe current date and time is {current_datetime_string}.'
+    content = f'Comment:\n{message}\nTasks:\n{tasks_json}'
+    response, _ = get_completion(comment=content, system_message=system_message, model_class='gpt-4', force_json=True)
+    # return response
+    df = pd.read_json(StringIO(response), orient='index')
+    return df
+
 def say_tasks(say, tasks_list_header, task_list):
     for i, task in enumerate(task_list):
         if i==0:
@@ -147,13 +163,36 @@ def get_user_name(userID):
     return uname['profile']['real_name_normalized']
 
 def handle_message(message, say):
+
+    say("I hear you, let me think...")
+
     user_name = get_user_name(message['user'])
     msg = f"From: {user_name}\n{message['text']}"
-    tasks = extract_tasks(msg)
-    todo.add_to_database(tasks)
-    if todo.number_of_entries()>0:
-        header, tasks = todo.print_todo_list()
+
+    # Find similar existing tasks and ask gpt to updated them based on the message
+    similar_tasks_json = todos.get_similar_tasks_as_json(msg, similar_task_threshold)
+    updated_tasks_df = update_tasks(msg, similar_tasks_json) 
+    if updated_tasks_df.shape[0]>0:
+        # TODO: ask user for confirmation before updating
+        todos.update_tasks_in_database(updated_tasks_df)
+        updated_tasks_str = ', '.join([str(i) for i in updated_tasks_df.index.values.tolist()])
+        if updated_tasks_df.shape[0]==1: say(f"I updated existing task {updated_tasks_str}")
+        else: say(f"I updated existing tasks {updated_tasks_str}")
+        # say(todo.print_df_as_text_table(updated_tasks_df))
+        print(todos.df)
+        header, tasks = todos.print_todo_list()
         say_tasks(say, header, tasks)
+
+    # Otherwise find new tasks in the message
+    else: # for now we will only either update tasks or add new tasks.
+        say("I don't see any relevant existing tasks, let me look for new ones...")
+        new_tasks = extract_tasks(msg)
+        if new_tasks.shape[0]==1: say("I identified this new task:")
+        else: say("I identified these new tasks:")
+        todos.add_new_task_to_database(new_tasks)
+        if todos.number_of_entries()>0:
+            header, tasks = todos.print_todo_list()
+            say_tasks(say, header, tasks)
         
 @app.event("message")
 def handle_message_events(body, say):
