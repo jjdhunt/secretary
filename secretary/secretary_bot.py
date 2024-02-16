@@ -187,12 +187,17 @@ def handle_message(message, say):
     else: # for now we will only either update tasks or add new tasks.
         say("I don't see any relevant existing tasks, let me look for new ones...")
         new_tasks = extract_tasks(msg)
-        if new_tasks.shape[0]==1: say("I identified this new task:")
-        else: say("I identified these new tasks:")
-        todos.add_new_task_to_database(new_tasks)
-        if todos.number_of_entries()>0:
-            header, tasks = todos.print_todo_list()
-            say_tasks(say, header, tasks)
+        if new_tasks.shape[0]>0:
+            if new_tasks.shape[0]==1: say("I identified this new task:")
+            else: say("I identified these new tasks:")
+            todos.add_new_task_to_database(new_tasks)
+            if todos.number_of_entries()>0:
+                header, tasks = todos.print_todo_list()
+                say_tasks(say, header, tasks)
+        else:
+            say("I dont see much new going on in that last comment...")
+    
+    say("OK, I'm gonna go mine some bitcoins, let me know if you need anything.")
         
 @app.event("message")
 def handle_message_events(body, say):

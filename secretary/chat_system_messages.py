@@ -3,7 +3,7 @@ Each action item should be formatted as json object and all the action items sho
 
 [
   {
-    "topic": <whatever the topic is>,
+    "tags": <a list of topic(s)>,
     "type": <one of [question, action_item]>,
     "due date": <the due date, if any, formatted as "YYYY-MM-DD">,
     "requestor": <the person(s) the request is coming from>,
@@ -20,7 +20,7 @@ Some guidance:
 You must return a valid json array and nothing else.
 If any value is not known, it should be "NaN".
 Action items can be requests, questions, or things people need to do. There may be just one simple action item.
-Reuse the same topic as much as possible.
+Reuse the same tags as much as possible.
 The requestor and actor may be mentioned in the text itself, or they may be the sender of the text.
 The actor can also be the requestor, such as if the text says, "I need to do x."
 If the text is implicitly or explicitly directed at you, the actor should be "ME".

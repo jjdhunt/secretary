@@ -35,7 +35,7 @@ class Todo:
         if self.database is not None and os.path.exists(self.database):
             self.df = pd.read_parquet(self.database)
         else:
-            self.df = pd.DataFrame(columns=['completed', 'topic', 'type', 'due date', 'requestor', 'actor', 'summary', 'notes', 'embedding'])
+            self.df = pd.DataFrame(columns=['completed', 'tags', 'type', 'due date', 'requestor', 'actor', 'summary', 'notes', 'embedding'])
 
     def get_task_similarity(self, content):
         content_embedding = self.get_embedding(content)

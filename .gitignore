@@ -57,3 +57,5 @@ ENV/
 !.vscode/launch.json 
 !.vscode/extensions.json 
 .history
+
+*.pem
