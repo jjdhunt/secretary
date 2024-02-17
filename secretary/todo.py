@@ -7,6 +7,7 @@ from io import StringIO
 from dotenv import load_dotenv
 from openai import OpenAI
 import numpy as np
+from typing import Optional, Union, List, Tuple
 
 class Todo:
 
@@ -85,6 +86,8 @@ class Todo:
         """
         Given a dataframe of tasks, replace the existing tasks with the same indexes.
         """
+        # Force anything in the 'completed' column to a boolean
+        tasks_df['completed'] = tasks_df['completed'].apply(to_boolean)
         # embed new tasks
         tasks_df['embedding'] = tasks_df.apply(lambda x: self.__get_df_row_embedding(x), axis=1)
         self.df.loc[tasks_df.index] = tasks_df
@@ -93,13 +96,33 @@ class Todo:
     def number_of_entries(self):
         return self.df.shape[0]
 
-    def print_todo_list(self):
-        '''
-        Prints the current tasks to a textual table format with one row per task.
-        A header string and a list of task strings is returned. Printing the header
-        followed by each entry in the task list will make a pretty table.
-        '''
+    def print_todo_list(self, task_indexes: Optional[Union[int, List[int]]] = None) -> Tuple[str, List[str]]:
+        """
+        Print the tasks as a text table.
+        Optionally filter by task indexes.
+        The table includes a header and rows for each task.
+
+        Parameters
+        ----------
+        task_indexes : Optional[Union[int, List[int]]], optional
+            Indexes of tasks to include in the printout. If None, all tasks are included.
+
+        Returns
+        -------
+        Tuple[str, List[str]]
+            A tuple containing two elements:
+            - The table header as a string.
+            - A list of strings, each representing a row in the table for a task.
+
+        Notes
+        -----
+        - The 'embedding' column is always excluded from the output.
+        - If `task_indexes` is provided, only the tasks corresponding to those indexes are included.
+        """
+
         df_to_print = self.df.drop(columns=['embedding'], errors='ignore')
+        if task_indexes is not None:
+            df_to_print = df_to_print.iloc[task_indexes]
         header, tasks = print_df_as_text_table(df_to_print)
         return header, tasks
         
@@ -140,3 +163,12 @@ def print_df_as_text_table(df):
         database_str = tabulate(df, headers='keys', tablefmt='rounded_grid', maxcolwidths=40)
         header, tasks = __split_table_into_rows(database_str)
         return header, tasks
+
+def to_boolean(value):
+    if pd.isnull(value):
+        return False  # Converts NaN values to False
+    if str(value).lower() in ['True', 'true', '1', 'yes', 'completed', 'done',
+                              '*True*', '*true*', '*1*', '*yes*', '*completed*', '*done*']:
+        return True
+    else:
+        return False

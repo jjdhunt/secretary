@@ -1,4 +1,4 @@
-extract_action_items = '''You should extract all questions and action items from the text and structure it as json array.
+extract_action_items = '''You should extract all questions and action items from the text and structure them as a json array.
 Each action item should be formatted as json object and all the action items should be in a json array exactly like this:
 
 [
@@ -19,12 +19,15 @@ Each action item should be formatted as json object and all the action items sho
 Some guidance:
 You must return a valid json array and nothing else.
 If any value is not known, it should be "NaN".
-Action items can be requests, questions, or things people need to do. There may be just one simple action item.
 Reuse the same tags as much as possible.
 The requestor and actor may be mentioned in the text itself, or they may be the sender of the text.
 The actor can also be the requestor, such as if the text says, "I need to do x."
 If the text is implicitly or explicitly directed at you, the actor should be "ME".
 You should not respond to the comment even if it is directed at you.
+Be careful to capture any and all action items.
+Action items can be requests, questions, or things people need to do.
+There may be just one simple action item in the message.
+If there are no action items, respond with just an empty list.
 '''
 
 correct_json_syntax = '''You should correct any syntax mistakes in the provided json.
@@ -38,10 +41,19 @@ choose_tools = '''Assess if the user has indicated that any tasks are completed.
 If the user does not indicate that any are completed, just say 'you didn't do anything today.'"
 '''
 
-update_tasks = '''The user will provide you with a comment followed by a list of tasks formatted as json.
-If any of the information is relevant to any of the tasks, you should update those tasks as appropriate and return the updated tasks as as json.
-Try to add content verbatim.
+update_tasks = '''The user will provide you with a list of tasks formatted as json, and then a comment.
+If any of the information in the comment is relevant to any of the tasks, you should update those tasks as appropriate and return the updated tasks as as json.
+Only update tasks if they are very relevant. If you are not sure, just return an empty json object, '{}'.
+If you update a task, you MUST be VERY CAREFUL to include all the information in the original task unless the comment EXPLICITLY indicates it should be removed or modified.
 Surround just the added or modified content with '*'.
-If you update a task, you must be careful to include all the information in the original task unless the comment explicitly indicates it should be removed or modified.
-It if possible that the comment does not relate to any of the provided tasks, in which case you should return an empty json object, ‘{}’.
+IF NO TASK CONTENT NEEDS TO BE UPDATED, RETURN ONLY AN EMPTY json object, '{}'.
 '''
+
+# update_tasks = "no matter what, always just return an empty json object, '{}'."
+
+answer_task_questions = '''The user will provide you with a list of tasks formatted as json, and then a comment.
+ONLY if the comment has questions DIRECTED at YOU that can be answered based on the content in the tasks, answer them.
+If there are no questions DIRECTED at YOU in the comment, respond with only "".
+'''
+# If the comment has questions directed at you that can not be answered based on the content in the tasks, do NOT answer them. Just Reply with, "Sorry I cannot answer your question about X."
+# '''

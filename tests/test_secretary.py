@@ -43,3 +43,16 @@ def test_inferring_a_date():
 
     # gpt Should infer the due date for "next Wednesday".
     assert df.loc[0, 'due date'] == next_wednesday
+
+def test_question_answering():
+    import sys
+    sys.path.append('../secretary')
+    from secretary import todo
+    import secretary.secretary_bot as sb
+
+    comment = 'From: Jack\nHow many "steves estate" tasks are open?'
+
+    todos = todo.Todo('tests/data/tasks_database')
+    similar_tasks_json = todos.get_similar_tasks_as_json(comment, 0.3)
+    answers = sb.answer_questions_about_tasks(comment, similar_tasks_json, current_datetime_string="2024-02-11")
+    assert answers == 'There are 6 "steves estate" tasks that are open.'

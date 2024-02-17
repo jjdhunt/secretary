@@ -13,7 +13,7 @@ from datetime import datetime
 import sys
 sys.path.append('../secretary')
 
-import secretary.chat_system_messages as sm
+import secretary.system_messages as sm
 import secretary.chat_tools as ct
 import secretary.todo as todo
 
@@ -27,51 +27,27 @@ app = App(token=SLACK_BOT_TOKEN)
 similar_task_threshold = 0.2 # a bit of ad-hoc testing showed about 0.2 is a good threshold
 
 # Interaction flow:
-# 1. User sends comment
-#       a.  To simplify things initially we will assume each comment is a complete thought.
-#           Later, we can add logic to watch for 'user-typing' events and have a timeout, and/or ask gpt 'has the user completed their thought?'.
-# 2. Extract tasks from comment [PROMPT: extract_action_items].
-# 3. Iterate over new tasks, starting with all secretary tasks.
-#       a. For each task, find semantically similar existing tasks. Provide these along with new task to gpt.
-#       b. For secretary tasks,
-#           i.   First ask gpt to select a tool [PROMPT: select_secretary_task_tool].
-#                Secretary tools: show_tasks([all, open, closed, for_actor, from_requestor, due_by(date)]),
-#           ii.  Execute tools.
-#       c. For non-tool secretary tasks and all non-secretary tasks:
-#           i. Ask if the new task is related to any of the similar existing task(s) [PROMPT: identify_related_existing_tasks].
-#           ii. If yes, ask it to merge/update the indicated existing task(s) based on the new task [PROMPT: update_existing_task_items].
-#               a. Show the user the old task, the new task, and the old task updated with the new task and ask for confirmation.
-#               b. If user confirms, replace old task with updated tasks and reembed the updated task.
-# 4. For remaining new tasks (tasks not used to update existing tasks, and secretary tasks not used to trigger tools):
-#       a. If they are secretary tasks, notify the user "I don't know how to do X."
-#       b. If they are non-secretary tasks, embed the updated task.
-
-# Buuut...
-# This could result in orphaned tasks. For example, if the user says "I bought eggs" this might not be identified as an action item,
-# and so it would not be used to update the relevant task. Should the entire comment be given to gpt to ask if it 
-# should be used to update existing tasks?
-
-# Another version of interaction flow:
-# 1. Use the whole comment to update retrieved tasks.
-#       a. Retrieve semantically similar tasks.
-#       b. Provide these in json format to gpt along with new user coment and ask it to update the task(s) based on the comment [PROMPT: update_tasks].
-#       c. Provide the original and updated task(s) to user for confirmation of update.
-#       d. If user confirms, replace old task(s) with updated task(s) and reembed the updated task(s).
-# 2. Extract tasks from comment [PROMPT: extract_action_items].
-# 3. Iterate over new tasks for the secretary.
+# 0. Retrieve related existing tasks that are semantically similar (TODO: and keyword search) to comment.
+# 1. TODO: Answer questions about existing tasks.
+#       a. Provide related existing tasks and ask gpt to answer any questions in the comment about them [PROMPT: answer_task_questions].
+#       b. Send any answers to the user.
+# 2. Use the whole comment to update retrieved tasks.
+#       a. Provide related existing tasks in json format to gpt along with new user comment and ask it to update the task(s) based on the comment [PROMPT: update_tasks].
+#       b. TODO: Provide the original and updated task(s) to user for confirmation of update.
+#       c. TODO: If user confirms, replace old task(s) with updated task(s) and reembed the updated task(s).
+# 3. Extract tasks from comment [PROMPT: extract_action_items].
+# 4. TODO: Iterate over new tasks for the secretary.
 #       a. First ask gpt to select a tool [PROMPT: select_secretary_task_tool].
 #          Secretary tools: show_tasks([all, open, closed, for_actor, from_requestor, due_by(date)]),
 #       b. Execute specified tools.
 #       c. If no tool is identified for the secretary task, report to the user 'Sorry, I don't know how to do that.'
-# 4. Iterate over new non-secretary tasks.
+
+# We won't do step 5 now. For now we will assume we do only step 2 or 3 but not both of them.
+# 5. TODO: Iterate over new non-secretary tasks.
 #       a. For each task, find semantically similar existing tasks. These should now have information from the comment incorporated into them via the updating process in step 1.
 #       b. Provide these related existing tasks, along with new task, to gpt and ask if the new tasks is redundant to or a subset of any of the existing tasks [PROMPT: is_new_task_redundant].
 #       c. If the new tasks is redundant, show it to the user and ask for confirmation. If the user confirms, throw away the new task.
 #       d. If the new task is not redundant, add it to the task database and embed it.
-
-# An alternative to step 4 would be to ask gpt, as part of step 1b, to also 
-# return a version of the comment with the information used to update the 
-# existing task(s) stripped out. This would probably be pretty error prone though.
 
 client = OpenAI(
     # Defaults to os.environ.get("OPENAI_API_KEY")
@@ -127,12 +103,12 @@ def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, t
 
 def extract_tasks(message, current_datetime_string=None):
     '''
-    current_datetime_string - a datetime formated as 'Y-m-d H:M:S'
+    current_datetime_string - a datetime formated as 'Y-m-d'
     '''
     if current_datetime_string==None:
-        current_datetime_string = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        current_datetime_string = datetime.now().strftime('%Y-%m-%d')
     system_message = sm.extract_action_items
-    system_message += f'\nThe current date and time is {current_datetime_string}.'
+    system_message += f'\nThe current date and time is {current_datetime_string}.\n'
     response, _ = get_completion(comment=message, system_message=system_message, model_class='gpt-4', force_json=False)
     df = pd.read_json(StringIO(response), orient='records')
     return df
@@ -142,14 +118,26 @@ def update_tasks(message, tasks_json, current_datetime_string=None):
     current_datetime_string - a datetime formated as 'Y-m-d H:M:S'
     '''
     if current_datetime_string==None:
-        current_datetime_string = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        current_datetime_string = datetime.now().strftime('%Y-%m-%d')
     system_message = sm.update_tasks
-    system_message += f'\nThe current date and time is {current_datetime_string}.'
-    content = f'Comment:\n{message}\nTasks:\n{tasks_json}'
+    system_message += f'\nThe current date and time is {current_datetime_string}.\n'
+    content = f'Tasks:\n{tasks_json}\nComment:\n{message}'
     response, _ = get_completion(comment=content, system_message=system_message, model_class='gpt-4', force_json=True)
-    # return response
+
     df = pd.read_json(StringIO(response), orient='index')
     return df
+
+def answer_questions_about_tasks(message, tasks_json, current_datetime_string=None):
+    '''
+    current_datetime_string - a datetime formated as 'Y-m-d H:M:S'
+    '''
+    if current_datetime_string==None:
+        current_datetime_string = datetime.now().strftime('%Y-%m-%d')
+    system_message = sm.answer_task_questions
+    system_message += f'\nThe current date and time is {current_datetime_string}.'
+    content = f'Tasks:\n{tasks_json}\nComment:\n{message}'
+    response, _ = get_completion(comment=content, system_message=system_message, model_class='gpt-4', force_json=False)
+    return response
 
 def say_tasks(say, tasks_list_header, task_list):
     for i, task in enumerate(task_list):
@@ -169,33 +157,42 @@ def handle_message(message, say):
     user_name = get_user_name(message['user'])
     msg = f"From: {user_name}\n{message['text']}"
 
-    # Find similar existing tasks and ask gpt to updated them based on the message
+    # Find related existing tasks
     similar_tasks_json = todos.get_similar_tasks_as_json(msg, similar_task_threshold)
-    updated_tasks_df = update_tasks(msg, similar_tasks_json) 
+
+    # Answer questions about tasks
+    answers = answer_questions_about_tasks(msg, similar_tasks_json)
+    if answers not in {'""', ''}:
+        say(answers)
+        return
+    
+    # Ask gpt to updated related existing tasks based on the message
+    say("Let me see if there are any existing tasks I should update...")
+    updated_tasks_df = update_tasks(msg, similar_tasks_json)
     if updated_tasks_df.shape[0]>0:
         # TODO: ask user for confirmation before updating
         todos.update_tasks_in_database(updated_tasks_df)
-        updated_tasks_str = ', '.join([str(i) for i in updated_tasks_df.index.values.tolist()])
+        updated_tasks_indexes = updated_tasks_df.index.values.tolist()
+        updated_tasks_str = ', '.join([str(i) for i in updated_tasks_indexes])
         if updated_tasks_df.shape[0]==1: say(f"I updated existing task {updated_tasks_str}")
         else: say(f"I updated existing tasks {updated_tasks_str}")
-        # say(todo.print_df_as_text_table(updated_tasks_df))
-        print(todos.df)
-        header, tasks = todos.print_todo_list()
+        header, tasks = todos.print_todo_list(task_indexes=updated_tasks_indexes)
         say_tasks(say, header, tasks)
-
-    # Otherwise find new tasks in the message
-    else: # for now we will only either update tasks or add new tasks.
-        say("I don't see any relevant existing tasks, let me look for new ones...")
-        new_tasks = extract_tasks(msg)
-        if new_tasks.shape[0]>0:
-            if new_tasks.shape[0]==1: say("I identified this new task:")
-            else: say("I identified these new tasks:")
-            todos.add_new_task_to_database(new_tasks)
-            if todos.number_of_entries()>0:
-                header, tasks = todos.print_todo_list()
-                say_tasks(say, header, tasks)
-        else:
-            say("I dont see much new going on in that last comment...")
+        return
+        
+    # Find new tasks in the message
+    say("I don't see any relevant existing tasks, let me see if you mentioned any new ones...")
+    new_tasks = extract_tasks(msg)
+    if new_tasks.shape[0]>0:
+        if new_tasks.shape[0]==1: say("I identified this new task:")
+        else: say("I identified these new tasks:")
+        todos.add_new_task_to_database(new_tasks)
+        if todos.number_of_entries()>0:
+            # TODO: determine if user is on mobile and send task tables as images. Or otherwise make tables nice and more adaptive to display.
+            header, tasks = todos.print_todo_list()
+            say_tasks(say, header, tasks)
+    else:
+        say("Nope, I don't see any.")
     
     say("OK, I'm gonna go mine some bitcoins, let me know if you need anything.")
         
