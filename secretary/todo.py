@@ -36,7 +36,7 @@ class Todo:
         if self.database is not None and os.path.exists(self.database):
             self.df = pd.read_parquet(self.database)
         else:
-            self.df = pd.DataFrame(columns=['completed', 'tags', 'type', 'due date', 'requestor', 'actor', 'summary', 'notes', 'embedding'])
+            self.df = pd.DataFrame(columns=['status', 'tags', 'type', 'due date', 'requestor', 'actor', 'summary', 'notes', 'embedding'])
 
     def get_task_similarity(self, content):
         content_embedding = self.get_embedding(content)
@@ -70,28 +70,34 @@ class Todo:
         '''
 
         '''
-        excluded_columns = ['completed', 'embeddding']
+        excluded_columns = ['status', 'embeddding']
         row = row.drop(excluded_columns, errors='ignore') # make sure to never reembbed an embedding, if there is one in the row
         json = row.to_json()
         return self.get_embedding(json)
 
-    def add_new_task_to_database(self, tasks_df):
+    def add_new_task_to_database(self, tasks_df: pd.DataFrame) -> List[int]:
+        """
+        Given a dataframe of new tasks add them to the database and return a
+        list of the indexes of the added tasks.
+        """
         # embed new tasks
         tasks_df['embedding'] = tasks_df.apply(lambda x: self.__get_df_row_embedding(x), axis=1)
-        tasks_df['completed'] = False
+        tasks_df['status'] = 'incomplete'
         self.df = pd.concat([self.df, tasks_df], ignore_index=True)
         self.save_database()
+        n_new_tasks = tasks_df.shape[0]
+        return self.df.tail(n_new_tasks).index.values.tolist()
 
-    def update_tasks_in_database(self, tasks_df):
+    def update_tasks_in_database(self, tasks_df: pd.DataFrame) -> List[int]:
         """
         Given a dataframe of tasks, replace the existing tasks with the same indexes.
+        Return a list of the indexes of the updated tasks.
         """
-        # Force anything in the 'completed' column to a boolean
-        tasks_df['completed'] = tasks_df['completed'].apply(to_boolean)
         # embed new tasks
         tasks_df['embedding'] = tasks_df.apply(lambda x: self.__get_df_row_embedding(x), axis=1)
         self.df.loc[tasks_df.index] = tasks_df
         self.save_database()
+        return tasks_df.index.values.tolist()
 
     def number_of_entries(self):
         return self.df.shape[0]

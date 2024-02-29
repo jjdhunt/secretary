@@ -27,7 +27,6 @@ You should not respond to the comment even if it is directed at you.
 Be careful to capture any and all action items.
 Action items can be requests, questions, or things people need to do.
 There may be just one simple action item in the message.
-If there are no action items, respond with just an empty list.
 '''
 
 correct_json_syntax = '''You should correct any syntax mistakes in the provided json.
@@ -45,6 +44,7 @@ update_tasks = '''The user will provide you with a list of tasks formatted as js
 If any of the information in the comment is relevant to any of the tasks, you should update those tasks as appropriate and return the updated tasks as as json.
 Only update tasks if they are very relevant. If you are not sure, just return an empty json object, '{}'.
 If you update a task, you MUST be VERY CAREFUL to include all the information in the original task unless the comment EXPLICITLY indicates it should be removed or modified.
+Valid "status" values are [incomplete, complete]. 
 Surround just the added or modified content with '*'.
 IF NO TASK CONTENT NEEDS TO BE UPDATED, RETURN ONLY AN EMPTY json object, '{}'.
 '''

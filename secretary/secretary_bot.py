@@ -9,6 +9,7 @@ from tabulate import tabulate
 import re
 from io import StringIO
 from datetime import datetime
+from typing import List, Optional
 
 import sys
 sys.path.append('../secretary')
@@ -24,7 +25,7 @@ SLACK_BOT_TOKEN = os.environ['SLACK_BOT_TOKEN']
 SLACK_APP_TOKEN = os.environ['SLACK_APP_TOKEN']
 app = App(token=SLACK_BOT_TOKEN)
 
-similar_task_threshold = 0.2 # a bit of ad-hoc testing showed about 0.2 is a good threshold
+similar_task_threshold = 0.3 # a bit of ad-hoc testing showed about 0.2 is a good threshold
 
 # Interaction flow:
 # 0. Retrieve related existing tasks that are semantically similar (TODO: and keyword search) to comment.
@@ -56,14 +57,14 @@ client = OpenAI(
 
 todos = todo.Todo('data/tasks_database')
 
-def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, tool_choice=None, temperature=0, force_json:bool=True):
-    model = 'gpt-4-1106-preview'
+def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, tool_choice=None, temperature=0, force_json:bool=False):
 
     models = {'gpt-3.5': 'gpt-3.5-turbo-1106',
               'gpt-4': 'gpt-4-1106-preview'}
     
-    model_max_tokens = {'gpt-4-1106-preview': 128000,
-                        'gpt-3.5-turbo-1106': 16000}
+    model_max_tokens = {'gpt-3.5-turbo-1106': 16000,
+                        'gpt-4-1106-preview': 128000
+                       }
 
     model = models[model_class]
 
@@ -92,6 +93,22 @@ def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, t
                                                     )
     return completion.choices[0].message.content, completion.choices[0].message.tool_calls
 
+def _strip_special(s:str, prefixes:Optional[List[str]]=[], suffixes:Optional[List[str]]=[]) -> str:
+    for prefix in prefixes:
+        if s.startswith(prefix):
+            s = s[len(prefix):]
+    for suffix in suffixes:
+        if s.endswith(suffix):
+            s = s[:-len(suffix)]
+    return s
+
+def _clean_response_json(json_str):
+    # Clean up the json string. Gpt can add unwanted decorators and things.
+    prefixes = ["```json"]
+    suffixes = ["```"]
+    json_str = _strip_special(json_str, prefixes, suffixes)
+    return json_str
+
 # def parse_direct_mention(message_text):
 #     """
 #         Finds a direct mention (a mention that is at the beginning) in message text
@@ -101,7 +118,7 @@ def get_completion(comment, system_message, model_class='gpt-3.5', tools=None, t
 #     # the first group contains the username, the second group contains the remaining message
 #     return (matches.group(1), matches.group(2).strip()) if matches else (None, message_text)
 
-def extract_tasks(message, current_datetime_string=None):
+def extract_tasks(message, current_datetime_string=None) -> pd.DataFrame:
     '''
     current_datetime_string - a datetime formated as 'Y-m-d'
     '''
@@ -109,11 +126,11 @@ def extract_tasks(message, current_datetime_string=None):
         current_datetime_string = datetime.now().strftime('%Y-%m-%d')
     system_message = sm.extract_action_items
     system_message += f'\nThe current date and time is {current_datetime_string}.\n'
-    response, _ = get_completion(comment=message, system_message=system_message, model_class='gpt-4', force_json=False)
-    df = pd.read_json(StringIO(response), orient='records')
+    response, _ = get_completion(comment=message, system_message=system_message, model_class='gpt-4')
+    df = pd.read_json(StringIO(_clean_response_json(response)), orient='records')
     return df
 
-def update_tasks(message, tasks_json, current_datetime_string=None):
+def update_tasks(message, tasks_json, current_datetime_string=None) -> pd.DataFrame:
     '''
     current_datetime_string - a datetime formated as 'Y-m-d H:M:S'
     '''
@@ -122,12 +139,11 @@ def update_tasks(message, tasks_json, current_datetime_string=None):
     system_message = sm.update_tasks
     system_message += f'\nThe current date and time is {current_datetime_string}.\n'
     content = f'Tasks:\n{tasks_json}\nComment:\n{message}'
-    response, _ = get_completion(comment=content, system_message=system_message, model_class='gpt-4', force_json=True)
-
-    df = pd.read_json(StringIO(response), orient='index')
+    response, _ = get_completion(comment=content, system_message=system_message, model_class='gpt-4')
+    df = pd.read_json(StringIO(_clean_response_json(response)), orient='index')
     return df
 
-def answer_questions_about_tasks(message, tasks_json, current_datetime_string=None):
+def answer_questions_about_tasks(message, tasks_json, current_datetime_string=None) -> str:
     '''
     current_datetime_string - a datetime formated as 'Y-m-d H:M:S'
     '''
@@ -136,7 +152,7 @@ def answer_questions_about_tasks(message, tasks_json, current_datetime_string=No
     system_message = sm.answer_task_questions
     system_message += f'\nThe current date and time is {current_datetime_string}.'
     content = f'Tasks:\n{tasks_json}\nComment:\n{message}'
-    response, _ = get_completion(comment=content, system_message=system_message, model_class='gpt-4', force_json=False)
+    response, _ = get_completion(comment=content, system_message=system_message, model_class='gpt-4')
     return response
 
 def say_tasks(say, tasks_list_header, task_list):
@@ -161,9 +177,9 @@ def handle_message(message, say):
     similar_tasks_json = todos.get_similar_tasks_as_json(msg, similar_task_threshold)
 
     # Answer questions about tasks
-    answers = answer_questions_about_tasks(msg, similar_tasks_json)
-    if answers not in {'""', ''}:
-        say(answers)
+    answer = answer_questions_about_tasks(msg, similar_tasks_json)
+    if answer not in {'""', ''}:
+        say(answer)
         return
     
     # Ask gpt to updated related existing tasks based on the message
@@ -171,13 +187,26 @@ def handle_message(message, say):
     updated_tasks_df = update_tasks(msg, similar_tasks_json)
     if updated_tasks_df.shape[0]>0:
         # TODO: ask user for confirmation before updating
-        todos.update_tasks_in_database(updated_tasks_df)
         updated_tasks_indexes = updated_tasks_df.index.values.tolist()
         updated_tasks_str = ', '.join([str(i) for i in updated_tasks_indexes])
-        if updated_tasks_df.shape[0]==1: say(f"I updated existing task {updated_tasks_str}")
-        else: say(f"I updated existing tasks {updated_tasks_str}")
-        header, tasks = todos.print_todo_list(task_indexes=updated_tasks_indexes)
-        say_tasks(say, header, tasks)
+        if len(updated_tasks_indexes)==1: say(f"I updated existing task {updated_tasks_str}:")
+        else: say(f"I updated existing tasks {updated_tasks_str}:")
+        for idx in updated_tasks_indexes:
+            df_old = todos.df.drop(columns=['embedding'], errors='ignore').loc[idx]
+            print(df_old)
+            df_new = updated_tasks_df.loc[idx]
+            print(df_new)
+            task_update_pair = pd.concat([df_old, df_new], axis=1).T
+            task_update_pair.reset_index(drop=True, inplace=True)
+            print(task_update_pair)
+            header, tasks = todo.print_df_as_text_table(task_update_pair)
+            say_tasks(say, header, tasks)
+        # updated_tasks_indexes = todos.update_tasks_in_database(updated_tasks_df)
+        # updated_tasks_str = ', '.join([str(i) for i in updated_tasks_indexes])
+        # if len(updated_tasks_indexes)==1: say(f"I updated existing task {updated_tasks_str}")
+        # else: say(f"I updated existing tasks {updated_tasks_str}")
+        # header, tasks = todos.print_todo_list(task_indexes=updated_tasks_indexes)
+        # say_tasks(say, header, tasks)
         return
         
     # Find new tasks in the message
@@ -186,10 +215,10 @@ def handle_message(message, say):
     if new_tasks.shape[0]>0:
         if new_tasks.shape[0]==1: say("I identified this new task:")
         else: say("I identified these new tasks:")
-        todos.add_new_task_to_database(new_tasks)
+        new_tasks_indexes = todos.add_new_task_to_database(new_tasks)
         if todos.number_of_entries()>0:
             # TODO: determine if user is on mobile and send task tables as images. Or otherwise make tables nice and more adaptive to display.
-            header, tasks = todos.print_todo_list()
+            header, tasks = todos.print_todo_list(task_indexes=new_tasks_indexes)
             say_tasks(say, header, tasks)
     else:
         say("Nope, I don't see any.")

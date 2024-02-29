@@ -32,7 +32,7 @@ def test_inferring_a_date():
 
     import secretary.secretary_bot as sb
 
-    message = "I need to buy eggs by before next Wednesday."
+    message = "I need to buy eggs before next Wednesday."
 
     today = "2024-02-11" # A Sunday
     next_wednesday = "2024-02-14"
@@ -54,5 +54,8 @@ def test_question_answering():
 
     todos = todo.Todo('tests/data/tasks_database')
     similar_tasks_json = todos.get_similar_tasks_as_json(comment, 0.3)
-    answers = sb.answer_questions_about_tasks(comment, similar_tasks_json, current_datetime_string="2024-02-11")
-    assert answers == 'There are 6 "steves estate" tasks that are open.'
+    answer = sb.answer_questions_about_tasks(comment, similar_tasks_json, current_datetime_string="2024-02-11")
+    assert (
+        '6' in answer or
+        'six' in answer
+    )
