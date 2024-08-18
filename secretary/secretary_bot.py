@@ -144,18 +144,18 @@ def handle_message(message, say):
 
     user_name = get_user_name(message['user'])
     msg = f"From: {user_name}\n{message['text']}"
-
-    # Find related existing tasks
-    existing_tasks_json = todos.get_relevant_tasks(msg)
+        
+    # Retrieve existing tasks
+    existing_tasks = todos.get_relevant_tasks(msg)
 
     # Answer questions about tasks
-    answer = answer_questions_about_tasks(msg, existing_tasks_json)
+    answer = answer_questions_about_tasks(msg, existing_tasks)
     if answer not in {'""', ''}:
         say(answer)
         return
-        
+    
     # Update existing tasks
-    updated_tasks = update_existing_tasks(msg, existing_tasks_json)
+    updated_tasks = update_existing_tasks(msg, existing_tasks)
     if len(updated_tasks)>0:
         card_urls = [task['url'] for task in updated_tasks]
         # send updated card urls to user
@@ -164,7 +164,8 @@ def handle_message(message, say):
 
     # Find new tasks in the message
     new_tasks = extract_tasks(msg)
-    new_tasks = merge_tasks(existing_tasks_json, new_tasks)
+    existing_tasks = todos.get_relevant_tasks(msg) # Tasks may have been updated so retrieve them again
+    new_tasks = merge_tasks(existing_tasks, new_tasks)
     if len(new_tasks)>0:
         card_urls = todos.add_new_tasks(new_tasks)
         # send new card urls to user
@@ -172,7 +173,7 @@ def handle_message(message, say):
         else: say("I identified these new tasks:\n"  + "\n".join(card_urls))
     
     say("OK, I'm gonna go mine some bitcoins, let me know if you need anything.")
-        
+
 @app.event("message")
 def handle_message_events(body, say):
     handle_message(body['event'], say)
