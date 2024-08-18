@@ -69,7 +69,9 @@ def extract_tasks(message: Annotated[str, "The user message content to extract t
     current_datetime_string = datetime.now().strftime('%Y-%m-%d')
     system_message = sm.extract_action_items
     system_message += f'\nThe current date and time is {current_datetime_string}.\n'
-    response, _ = get_completion(comment=message, system_message=system_message)
+    existing_labels_str = ', '.join(todo.get_labels().keys())
+    comment = f'{message}\n\nExisting Labels:\n{existing_labels_str}'
+    response, _ = get_completion(comment=comment, system_message=system_message)
     tasks = json.loads(_clean_response_json(response))
     for i, task in enumerate(tasks):
         task['id'] = i
@@ -103,10 +105,11 @@ def update_existing_tasks(message: str,
     tools = [trello.tools['update_card_description']['schema'],
              trello.tools['update_card_due']['schema'],
              trello.tools['update_card_completion']['schema'],
+             trello.tools['add_label_to_card']['schema'],
              ]
-    response, tool_calls = get_completion(comment=content,
-                                 system_message=system_message,
-                                 tools=tools)
+    _, tool_calls = get_completion(comment=content,
+                                   system_message=system_message,
+                                   tools=tools)
     
     updated_tasks = []
     if tool_calls is not None:

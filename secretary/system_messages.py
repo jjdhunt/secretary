@@ -4,7 +4,7 @@ Each action item should be formatted as json object and all the action items sho
 
 [
   {
-    "tags": <an array of topic(s)>,
+    "topics": <an array of one or more general topics>,
     "type": <one of [Questions, Action Items]>,
     "due_date": <the due date, if any, formatted as "YYYY-MM-DD">,
     "requestor": <the person(s) the request is coming from>,
@@ -18,6 +18,7 @@ Each action item should be formatted as json object and all the action items sho
 ]
 
 Some guidance:
+The user will provide a list of existing topics. Try to reuse existing topics as much as possible, but if none are good matches, then make up new ones. When making up new ones, try to reuse them for multiple tasks.
 You must return a valid json array and nothing else.
 If any value is not known, it should be "NaN".
 The requestor and actor may be mentioned in the text itself, or they may be the sender of the text.

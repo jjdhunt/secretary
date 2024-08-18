@@ -62,6 +62,74 @@ def get_lists_on_board(board_id: str):
 
     return json.loads(response.text)
 
+def create_list(board_id: str,
+                name: str):
+    # https://developer.atlassian.com/cloud/trello/rest/api-group-lists/#api-lists-post
+    url = "https://api.trello.com/1/lists"
+
+    query = {
+    'name': name,
+    'idBoard': board_id,
+    'key': os.environ['TRELLO_API_KEY'],
+    'token': os.environ['TRELLO_OAUTH_TOKEN']
+    }
+
+    response = requests.request(
+    "POST",
+    url,
+    params=query
+    )
+
+    return json.loads(response.text)
+
+def get_labels_on_board(board_id: str):
+    url = f"https://api.trello.com/1/boards/{board_id}/labels"
+
+    headers = {
+    "Accept": "application/json"
+    }
+
+    query = {
+    'key': TRELLO_API_KEY,
+    'token': TRELLO_OAUTH_TOKEN,
+    'limit': 1000,
+    }
+
+    response = requests.request(
+    "GET",
+    url,
+    headers=headers,
+    params=query
+    )
+
+    return json.loads(response.text)
+
+def create_label(board_id: str,
+                 name: str,
+                 color: str = 'sky'):
+    url = f"https://api.trello.com/1/boards/{board_id}/labels"
+
+    headers = {
+    "Accept": "application/json"
+    }
+
+    query = {
+    'name': name,
+    'color': color,
+    'idBoard': board_id,
+    'key': TRELLO_API_KEY,
+    'token': TRELLO_OAUTH_TOKEN,
+    }
+
+    response = requests.request(
+    "POST",
+    url,
+    headers=headers,
+    params=query
+    )
+
+    return json.loads(response.text)
+
 def get_cards_on_board(board_id: str):
     url = f"https://api.trello.com/1/boards/{board_id}/cards"
 
@@ -83,21 +151,22 @@ def get_cards_on_board(board_id: str):
 
     return json.loads(response.text)
 
-def create_list(board_id: str,
-                name: str):
-    # https://developer.atlassian.com/cloud/trello/rest/api-group-lists/#api-lists-post
-    url = "https://api.trello.com/1/lists"
+def get_card(card_id: str):
+    url = f"https://api.trello.com/1/cards/{card_id}"
+
+    headers = {
+    "Accept": "application/json"
+    }
 
     query = {
-    'name': name,
-    'idBoard': board_id,
-    'key': os.environ['TRELLO_API_KEY'],
-    'token': os.environ['TRELLO_OAUTH_TOKEN']
+    'key': TRELLO_API_KEY,
+    'token': TRELLO_OAUTH_TOKEN
     }
 
     response = requests.request(
-    "POST",
+    "GET",
     url,
+    headers=headers,
     params=query
     )
 
@@ -106,6 +175,7 @@ def create_list(board_id: str,
 def create_card(list_id: str,
                 name: str,
                 description: str = '',
+                label_ids: list[str] = [],
                 due: Optional[str] = None):
     # https://developer.atlassian.com/cloud/trello/rest/api-group-cards/#api-cards-post
     url = "https://api.trello.com/1/cards"
@@ -118,6 +188,7 @@ def create_card(list_id: str,
     'name': name,
     'desc': description,
     'idList': list_id,
+    'idLabels': label_ids,
     'key': os.environ['TRELLO_API_KEY'],
     'token': os.environ['TRELLO_OAUTH_TOKEN']
     }
@@ -206,6 +277,53 @@ def update_card_completion(id: Annotated[str, 'The id of the task card to update
 
     query = {
     'closed': is_complete,
+    'key': os.environ['TRELLO_API_KEY'],
+    'token': os.environ['TRELLO_OAUTH_TOKEN']
+    }
+    
+    response = requests.request(
+    "PUT",
+    url,
+    headers=headers,
+    params=query
+    )
+
+    return json.loads(response.text)
+
+@ct.tools_function(tools)
+def add_label_to_card(id: Annotated[str, 'The id of the task card to update'],
+                      label_name: Annotated[str, 'The name of the label to add to the card'],
+                ):
+    """
+    Add a label to a card.
+    """
+    label_name = label_name.lower()
+    #TODO:
+    card = get_card(id)
+    label_ids = card['idLabels']
+
+    board_id = card['idBoard']
+    labels = get_labels_on_board(board_id)
+    # check if the label already exists on the board
+    label_id = None
+    for label in labels:
+        if label['name'] == label_name: # then a label with this name exists on the board already
+            if label['id'] in label_ids: # then a label of this name is already on the card, so we're done
+                return
+            label_id = label['id']
+    if label_id is None: # if no existing label was found on the board, make a new one
+        label_id = create_label(board_id, label_name)['id']
+    
+    label_ids.append(label_id)
+
+    url = f"https://api.trello.com/1/cards/{id}"
+
+    headers = {
+    "Accept": "application/json"
+    }
+
+    query = {
+    'idLabels': label_ids,
     'key': os.environ['TRELLO_API_KEY'],
     'token': os.environ['TRELLO_OAUTH_TOKEN']
     }

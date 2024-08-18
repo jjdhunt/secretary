@@ -30,9 +30,38 @@ def clean_tasks(cards):
 
     return cleaned_cards
 
-class Todo:
+def get_tasks():
+    boards = trello.get_boards()
+    board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
+    cards = trello.get_cards_on_board(board_id)
+    keys_to_keep = ['id', 'name', 'desc']
+    cards = [{k: d[k] for k in keys_to_keep if k in d} for d in cards]
+    return cards
 
-    df = None
+def get_labels():
+    boards = trello.get_boards()
+    board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
+    labels = trello.get_labels_on_board(board_id)
+    labels = {label['name']: label['id'] for label in labels if label['name']!=''}
+    return labels
+
+def create_labels(names: list[str]):
+    """
+    Find the ids of existing labels, or create new labels.
+    """
+    label_ids = []
+    boards = trello.get_boards()
+    board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
+    existing_labels = get_labels()
+    for name in names:
+        name = name.lower()
+        if name in existing_labels:
+            label_ids.append(existing_labels[name])
+        elif name not in ['nan', 'nan', 'none', 'null']:
+            label_ids.append(trello.create_label(board_id, name)['id'])
+    return label_ids
+
+class Todo:
 
     def __init__(self):
         # Create the openai client
@@ -40,16 +69,8 @@ class Todo:
         # Defaults to os.environ.get("OPENAI_API_KEY"), otherwise use: api_key="API_Key",
         self.client = OpenAI()
 
-    def get_tasks(self):
-        boards = trello.get_boards()
-        board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
-        cards = trello.get_cards_on_board(board_id)
-        keys_to_keep = ['id', 'name', 'desc']
-        cards = [{k: d[k] for k in keys_to_keep if k in d} for d in cards]
-        return cards
-
     def get_relevant_tasks(self, content):
-        tasks = self.get_tasks()
+        tasks = get_tasks()
         tasks = clean_tasks(tasks)
         # similar_task_threshold = 0.3 # a bit of ad-hoc testing showed about 0.2 is a good threshold
         # similarity = self.get_task_similarity(tasks, content) #TODO
@@ -84,7 +105,7 @@ class Todo:
         board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
         card_urls = []
         for task in tasks:
-            # "tags": <a list of topic(s)>,
+            # "topics": <a list of topic(s)>,
             # "type": <one of [question, action_item]>,
             # "due_date": <the due date, if any, formatted as "YYYY-MM-DD">,
             # "requestor": <the person(s) the request is coming from>,
@@ -100,10 +121,12 @@ class Todo:
                 description = f"Requestor: {task['requestor']}\nActor: {task['actor']}\n\n{task['notes']}"
             else:
                 description = task['notes']
+            label_ids = create_labels(task['topics'])
             response = trello.create_card(list_id,
                                           name=task['summary'],
                                           description=description,
-                                          due=task['due_date'])
+                                          due=task['due_date'],
+                                          label_ids=label_ids)
             card_urls.append(response['url'])
 
         # TODO: embed the new tasks and record the embeddings
