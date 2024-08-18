@@ -16,7 +16,7 @@ def test_extracting_a_simple_todo():
     assert df.loc[0, 'notes'] == message_content
 
     # gpt should extract the due date.
-    assert df.loc[0, 'due date'] == date_string
+    assert df.loc[0, 'due_date'] == date_string
 
     # gpt should extract the requestor
     assert df.loc[0, 'requestor'] == 'Jack'
@@ -42,7 +42,7 @@ def test_inferring_a_date():
     assert df.loc[0, 'notes'] == message
 
     # gpt Should infer the due date for "next Wednesday".
-    assert df.loc[0, 'due date'] == next_wednesday
+    assert df.loc[0, 'due_date'] == next_wednesday
 
 def test_question_answering():
     import sys

@@ -9,36 +9,53 @@ from openai import OpenAI
 import numpy as np
 from typing import Optional, Union, List, Tuple
 
+import secretary.trello as trello
+    
+def clean_tasks(cards):
+    """Given a list of card dicts, remove the entries in the cards for which the value is None or an empty list."""
+    # Function to check if an entry in a card should be removed
+    def should_remove(value):
+        return value is None or value == [] or value == {}
+
+    def clean_dict(d):
+        # Recursively clean the dictionary
+        return {k: (clean_dict(v) if isinstance(v, dict) else v) 
+                for k, v in d.items() if not should_remove(v)}
+
+    # Iterate and filter the dictionaries
+    cleaned_cards = [clean_dict(d) for d in cards]
+
+    # Because some dicts can have empty dicts as members, we need to do multiple passes
+    cleaned_cards = [clean_dict(d) for d in cleaned_cards]
+
+    return cleaned_cards
+
 class Todo:
 
     df = None
 
-    def __init__(self, database:str=None):
-        '''
-        database - a string to the database, a parquet file 
-        '''
-
-        self.database = database
-        self.__load_database()
-
+    def __init__(self):
         # Create the openai client
         load_dotenv()
         # Defaults to os.environ.get("OPENAI_API_KEY"), otherwise use: api_key="API_Key",
         self.client = OpenAI()
 
-    def save_database(self):
-        if self.database is not None and self.df is not None:
-            output_file_path = Path(self.database)
-            output_file_path.parent.mkdir(parents=True, exist_ok=True)
-            self.df.to_parquet(self.database)
+    def get_tasks(self):
+        boards = trello.get_boards()
+        board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
+        cards = trello.get_cards_on_board(board_id)
+        keys_to_keep = ['id', 'name', 'desc']
+        cards = [{k: d[k] for k in keys_to_keep if k in d} for d in cards]
+        return cards
 
-    def __load_database(self):
-        if self.database is not None and os.path.exists(self.database):
-            self.df = pd.read_parquet(self.database)
-        else:
-            self.df = pd.DataFrame(columns=['status', 'tags', 'type', 'due date', 'requestor', 'actor', 'summary', 'notes', 'embedding'])
-
-    def get_task_similarity(self, content):
+    def get_relevant_tasks(self, content):
+        tasks = self.get_tasks()
+        tasks = clean_tasks(tasks)
+        # similar_task_threshold = 0.3 # a bit of ad-hoc testing showed about 0.2 is a good threshold
+        # similarity = self.get_task_similarity(tasks, content) #TODO
+        return tasks 
+    
+    def get_task_similarity(self, tasks, content):
         content_embedding = self.get_embedding(content)
 
         def dist(embedding):
@@ -48,133 +65,46 @@ class Todo:
             similarity = dot_product / (norm_vec1 * norm_vec2)
             return similarity
         
-        similarity = self.df['embedding'].apply(dist)
+        similarity = 0 #TODO
 
         return similarity
 
-    def get_similar_tasks(self, content, similarity_threshold):
-        similarity = self.get_task_similarity(content)
-        return self.df[similarity >= similarity_threshold]
-
-    def get_similar_tasks_as_json(self, content, similarity_threshold):
-        df = self.get_similar_tasks(content, similarity_threshold)
-        df = df.drop(columns=['embedding'])
-        return df.to_json(orient='index', indent=4)
-    
     def get_embedding(self, content):
         response = self.client.embeddings.create(input = content, model="text-embedding-3-small")
         embedding = np.array(response.data[0].embedding)
         return embedding
-    
-    def __get_df_row_embedding(self,row):
-        '''
 
-        '''
-        excluded_columns = ['status', 'embeddding']
-        row = row.drop(excluded_columns, errors='ignore') # make sure to never reembbed an embedding, if there is one in the row
-        json = row.to_json()
-        return self.get_embedding(json)
-
-    def add_new_task_to_database(self, tasks_df: pd.DataFrame) -> List[int]:
+    def add_new_tasks(self, tasks) -> List[int]:
         """
-        Given a dataframe of new tasks add them to the database and return a
+        Given a list of new tasks, add them to the database and return a
         list of the indexes of the added tasks.
         """
-        # embed new tasks
-        tasks_df['embedding'] = tasks_df.apply(lambda x: self.__get_df_row_embedding(x), axis=1)
-        tasks_df['status'] = 'incomplete'
-        self.df = pd.concat([self.df, tasks_df], ignore_index=True)
-        self.save_database()
-        n_new_tasks = tasks_df.shape[0]
-        return self.df.tail(n_new_tasks).index.values.tolist()
+        # make a new trello card for each task
+        boards = trello.get_boards()
+        board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
+        card_urls = []
+        for task in tasks:
+            # "tags": <a list of topic(s)>,
+            # "type": <one of [question, action_item]>,
+            # "due_date": <the due date, if any, formatted as "YYYY-MM-DD">,
+            # "requestor": <the person(s) the request is coming from>,
+            # "actor": <who should do the thing>,
+            # "summary": <a very concise summary of the item>,
+            # "notes": <direct quotes of all relevant information in the text needed to complete the task>
+            lists = trello.get_lists_on_board(board_id)
+            list_dict = trello.find_dict_by_name(lists, task['type'])
+            if not list_dict:
+                list_dict = trello.create_list(board_id, name=task['type'])
+            list_id = list_dict['id']
+            if isinstance(task['requestor'], str):
+                description = f"Requestor: {task['requestor']}\nActor: {task['actor']}\n\n{task['notes']}"
+            else:
+                description = task['notes']
+            response = trello.create_card(list_id,
+                                          name=task['summary'],
+                                          description=description,
+                                          due=task['due_date'])
+            card_urls.append(response['url'])
 
-    def update_tasks_in_database(self, tasks_df: pd.DataFrame) -> List[int]:
-        """
-        Given a dataframe of tasks, replace the existing tasks with the same indexes.
-        Return a list of the indexes of the updated tasks.
-        """
-        # embed new tasks
-        tasks_df['embedding'] = tasks_df.apply(lambda x: self.__get_df_row_embedding(x), axis=1)
-        self.df.loc[tasks_df.index] = tasks_df
-        self.save_database()
-        return tasks_df.index.values.tolist()
-
-    def number_of_entries(self):
-        return self.df.shape[0]
-
-    def print_todo_list(self, task_indexes: Optional[Union[int, List[int]]] = None) -> Tuple[str, List[str]]:
-        """
-        Print the tasks as a text table.
-        Optionally filter by task indexes.
-        The table includes a header and rows for each task.
-
-        Parameters
-        ----------
-        task_indexes : Optional[Union[int, List[int]]], optional
-            Indexes of tasks to include in the printout. If None, all tasks are included.
-
-        Returns
-        -------
-        Tuple[str, List[str]]
-            A tuple containing two elements:
-            - The table header as a string.
-            - A list of strings, each representing a row in the table for a task.
-
-        Notes
-        -----
-        - The 'embedding' column is always excluded from the output.
-        - If `task_indexes` is provided, only the tasks corresponding to those indexes are included.
-        """
-
-        df_to_print = self.df.drop(columns=['embedding'], errors='ignore')
-        if task_indexes is not None:
-            df_to_print = df_to_print.iloc[task_indexes]
-        header, tasks = print_df_as_text_table(df_to_print)
-        return header, tasks
-        
-    # Were we to update the embedding on a selection of rows we could do:
-    # df.loc[condition, :] = df.loc[condition, :].apply(apply_function, axis=1)
-
-    # def _split_string_on_newline(s, n):
-    #     lines = s.split('\n')
-    #     chunks = []
-    #     current_chunk = ""
-
-    #     for line in lines:
-    #         if len(current_chunk) + len(line) + 1 <= n:
-    #             current_chunk += (line + '\n')
-    #         else:
-    #             if current_chunk:
-    #                 chunks.append(current_chunk)
-    #             current_chunk = line + '\n'
-
-    #     if current_chunk:
-    #         chunks.append(current_chunk)
-
-    #     return chunks
-
-def __split_table_into_rows(table_str):
-    delimiters = ['├', '┤\n']
-    pattern = "|".join(map(re.escape, delimiters))
-    lines = re.split(pattern, table_str)
-    header = lines[0] + '├' + lines[1] + '┤\n'
-    return header, lines[2::2]
-
-def print_df_as_text_table(df):
-        '''
-        Prints the df to a textual table format with one row per task.
-        A header string and a list of task strings is returned. Printing the header
-        followed by each entry in the task list will make a pretty table.
-        '''
-        database_str = tabulate(df, headers='keys', tablefmt='rounded_grid', maxcolwidths=40)
-        header, tasks = __split_table_into_rows(database_str)
-        return header, tasks
-
-def to_boolean(value):
-    if pd.isnull(value):
-        return False  # Converts NaN values to False
-    if str(value).lower() in ['True', 'true', '1', 'yes', 'completed', 'done',
-                              '*True*', '*true*', '*1*', '*yes*', '*completed*', '*done*']:
-        return True
-    else:
-        return False
+        # TODO: embed the new tasks and record the embeddings
+        return card_urls
