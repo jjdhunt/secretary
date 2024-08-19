@@ -77,20 +77,31 @@ def extract_tasks(message: Annotated[str, "The user message content to extract t
         task['id'] = i
     return tasks
 
-def merge_tasks(existing_tasks: list[dict[Any]],
+def identify_novel_tasks(existing_tasks: list[dict[Any]],
                 new_tasks: list[dict[Any]]):
     """
     Identify novel tasks in the new_tasks list. Return a list of the novel tasks.
     """
     existing_tasks_json = json.dumps(existing_tasks)
     new_tasks_json = json.dumps(new_tasks)
-    system_message = sm.merge_tasks
     comment = f'Existing Tasks:\n{existing_tasks_json}\n\nPotential New Tasks:\n{new_tasks_json}\n'
-    response, _ = get_completion(comment=comment, system_message=system_message)
+    response, _ = get_completion(comment=comment, system_message=sm.identify_novel_tasks)
     response_dict = json.loads(_clean_response_json(response))
     novel_task_ids = response_dict["novel_tasks_ids"]
     novel_tasks = [task for task in new_tasks if task['id'] in novel_task_ids]
     return novel_tasks
+
+def filter_tasks(tasks: list[dict[Any]]):
+    """
+    Filter the tasks list. Return a list of the the unfiltered tasks.
+    """
+    tasks_json = json.dumps(tasks)
+    comment = f'{tasks_json}\n'
+    response, _ = get_completion(comment=comment, system_message=sm.filter_tasks)
+    response_dict = json.loads(_clean_response_json(response))
+    task_ids = response_dict["unfiltered_tasks_ids"]
+    unfiltered_tasks = [task for task in tasks if task['id'] in task_ids]
+    return unfiltered_tasks
 
 def update_existing_tasks(message: str,
                           existing_tasks: list[dict[Any]]):
@@ -167,8 +178,11 @@ def handle_message(message, say):
 
     # Find new tasks in the message
     new_tasks = extract_tasks(msg)
-    existing_tasks = todos.get_relevant_tasks(msg) # Tasks may have been updated so retrieve them again
-    new_tasks = merge_tasks(existing_tasks, new_tasks)
+    if len(new_tasks)>0:
+        existing_tasks = todos.get_relevant_tasks(msg) # Tasks may have been updated so retrieve them again
+        new_tasks = identify_novel_tasks(existing_tasks, new_tasks)
+    if len(new_tasks)>0:
+        new_tasks = filter_tasks(new_tasks)
     if len(new_tasks)>0:
         card_urls = todos.add_new_tasks(new_tasks)
         # send new card urls to user

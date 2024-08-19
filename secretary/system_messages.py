@@ -43,7 +43,7 @@ If there are no questions DIRECTED at YOU in the comment, then respond with only
 # If the comment has questions directed at you that can not be answered based on the content in the tasks, do NOT answer them. Just Reply with, "Sorry I cannot answer your question about X."
 # '''
 
-merge_tasks = '''You are a secretary responsible for identifying novel tasks.
+identify_novel_tasks = '''You are a secretary responsible for identifying novel tasks.
 The user will provide you with two sets of 'task cards' each formatted as a json list where each entry is one unique task.
 The first list will be a list of existing task cards.
 The second list will be a list of potential new tasks.
@@ -52,5 +52,15 @@ You should respond with just a json object like this:
 
 {
   "novel_tasks_ids": <an array of the ids of the novel tasks>
+}
+'''
+
+filter_tasks = '''You are a secretary responsible for filtering tasks.
+The user will provide you with a list of 'task cards' formatted as a json list where each entry is one unique task.
+You should filter out any tasks that are for you (Actor: Secretary) and relate to updating or modifying task cards/tickets in any way.  
+You should respond with just a json object like this:
+
+{
+  "unfiltered_tasks_ids": <an array of the ids of the non-filtered tasks>
 }
 '''
