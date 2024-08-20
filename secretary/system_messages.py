@@ -1,3 +1,12 @@
+base_secretary = '''You are a secretary responsible for helping the user manage tasks.
+Besides the conversation with the user, you will also be provided with a json-formatted list of existing tasks.
+
+You have several duties:
+1. Answering questions and providing information about existing tasks. You should only answer questions about tasks, and only if the answer can be found in the content provided;
+2. Updating existing tasks with new information provided by the user. You have tools to do this, just pick the appropriate ones;
+3. Extracting new tasks from comments, documents, emails, etc that the user shares with you. You have a tool to do this, use it whenever appropriate.
+'''
+
 extract_action_items = '''You are a secretary responsible for identifying action items and open questions in the user's comments.
 You should extract all action items and questions from the text and structure them as a json array.
 Each action item should be formatted as json object and all the action items should be in a json array exactly like this:
@@ -30,24 +39,11 @@ Action items can be requests, questions, or things people need to do.
 There may be just one simple action item in the message.
 '''
 
-update_tasks = '''The user will provide you with a list of 'task cards' formatted as a json list where each entry is one unique task, and then a comment.
-If any of the information in the comment is relevant to any of the tasks, you should use the supplied tools to update or modify the tasks as appropriate.
-ONLY update tasks if the information in the comment is completely relevant to the task!
-If no tasks need to be updated or modified, then DO NOT use any tools! Just respond with "".
-'''
-
-answer_task_questions = '''The user will provide you with a list of 'task cards' formatted as a json list where each entry is one unique task, and then a comment.
-ONLY if the comment has questions DIRECTED at YOU that can be answered based on the content in the tasks, answer them.
-If there are no questions DIRECTED at YOU in the comment, then respond with only "".
-'''
-# If the comment has questions directed at you that can not be answered based on the content in the tasks, do NOT answer them. Just Reply with, "Sorry I cannot answer your question about X."
-# '''
-
 identify_novel_tasks = '''You are a secretary responsible for identifying novel tasks.
-The user will provide you with two sets of 'task cards' each formatted as a json list where each entry is one unique task.
-The first list will be a list of existing task cards.
+The user will provide you with two sets of 'tasks' each formatted as a json list where each entry is one unique task.
+The first list will be a list of existing tasks.
 The second list will be a list of potential new tasks.
-Your job is to identify which, if any, of the potential new tasks is novel and do not have an existing task card.
+Your job is to identify which, if any, of the potential new tasks is novel and do not have an existing task.
 You should respond with just a json object like this:
 
 {
@@ -56,8 +52,8 @@ You should respond with just a json object like this:
 '''
 
 filter_tasks = '''You are a secretary responsible for filtering tasks.
-The user will provide you with a list of 'task cards' formatted as a json list where each entry is one unique task.
-You should filter out any tasks that are for you (Actor: Secretary) and relate to updating or modifying task cards/tickets in any way.  
+The user will provide you with a list of 'tasks' formatted as a json list where each entry is one unique task.
+You should filter out any tasks that are for you (Actor: Secretary) and relate to updating or modifying tasks/cards/tickets in any way.  
 You should respond with just a json object like this:
 
 {

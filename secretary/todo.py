@@ -28,14 +28,16 @@ def clean_tasks(cards):
     # Because some dicts can have empty dicts as members, we need to do multiple passes
     cleaned_cards = [clean_dict(d) for d in cleaned_cards]
 
+    # Finally ,filter to just these fields, if they are still present
+    keys_to_keep = ['id', 'name', 'desc', 'closed', 'url', 'email', 'due']
+    cleaned_cards = [{k: d[k] for k in keys_to_keep if k in d} for d in cleaned_cards]
+
     return cleaned_cards
 
 def get_tasks():
     boards = trello.get_boards()
     board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
     cards = trello.get_cards_on_board(board_id)
-    keys_to_keep = ['id', 'name', 'desc']
-    cards = [{k: d[k] for k in keys_to_keep if k in d} for d in cards]
     return cards
 
 def get_labels():
@@ -103,7 +105,7 @@ class Todo:
         # make a new trello card for each task
         boards = trello.get_boards()
         board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
-        card_urls = []
+        cards = []
         for task in tasks:
             # "topics": <a list of topic(s)>,
             # "type": <one of [question, action_item]>,
@@ -127,7 +129,7 @@ class Todo:
                                           description=description,
                                           due=task['due_date'],
                                           label_ids=label_ids)
-            card_urls.append(response['url'])
+            cards.append(response)
 
         # TODO: embed the new tasks and record the embeddings
-        return card_urls
+        return cards
