@@ -7,10 +7,13 @@ from io import StringIO
 from dotenv import load_dotenv
 from openai import OpenAI
 import numpy as np
-from typing import Optional, Union, List, Tuple
+from typing import Annotated, Any, Optional, Union, List, Tuple
 
 import secretary.trello as trello
-    
+import secretary.chat_tools as ct
+
+tools = {}
+
 def clean_tasks(cards):
     """Given a list of card dicts, remove the entries in the cards for which the value is None or an empty list."""
     # Function to check if an entry in a card should be removed
@@ -35,25 +38,22 @@ def clean_tasks(cards):
     return cleaned_cards
 
 def get_tasks():
-    boards = trello.get_boards()
-    board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
+    board_id = trello.get_board_id(board_name='Secretary')
     cards = trello.get_cards_on_board(board_id)
     return cards
 
 def get_labels():
-    boards = trello.get_boards()
-    board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
+    board_id = trello.get_board_id(board_name='Secretary')
     labels = trello.get_labels_on_board(board_id)
     labels = {label['name']: label['id'] for label in labels if label['name']!=''}
     return labels
 
-def create_labels(names: list[str]):
+def eager_get_label_ids(names: list[str]):
     """
-    Find the ids of existing labels, or create new labels.
+    Given a list of label names, find the ids of those that exist already, or create new labels and get their ids.
     """
     label_ids = []
-    boards = trello.get_boards()
-    board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
+    board_id = trello.get_board_id(board_name='Secretary')
     existing_labels = get_labels()
     for name in names:
         name = name.lower()
@@ -62,6 +62,56 @@ def create_labels(names: list[str]):
         elif name not in ['nan', 'nan', 'none', 'null']:
             label_ids.append(trello.create_label(board_id, name)['id'])
     return label_ids
+
+def eager_get_list_id(board_name: str, list_name: str):
+    """
+    Given board and a list name, find its id if it exists on the board already, or create it on that board and get its id.
+    """
+    board_id = trello.get_board_id(board_name)
+    list_id = trello.get_list_id(board_id, list_name)
+    if not list_id:
+        list_id = trello.create_list(board_id, list_name)['id']
+    return list_id
+
+@ct.tools_function(tools)
+def update_task_description(id: Annotated[str, 'The id of the task to update'],
+                            updated_description: Annotated[str, 'A new description to replace the old one with.']):
+    """
+    Update the description of a task.
+    """
+    return trello.update_card(id=id, update_field='desc', updated_value=updated_description)
+
+
+@ct.tools_function(tools)
+def update_task_due_date(id: Annotated[str, 'The id of the task to update'],
+                         updated_due_date: Annotated[str, 'The new due date, formatted as "YYYY-MM-DD"']):
+    """
+    Update the due date of a task.
+    """
+    return trello.update_card(id=id, update_field='due', updated_value=updated_due_date)
+
+
+@ct.tools_function(tools)
+def update_task_completion(id: Annotated[str, 'The id of the task to update'],
+                           is_complete: Annotated[str, 'The new status. "true" is done/completed, "false" is incomplete.']):
+    """
+    Change the completion status of a task.
+    """
+    return trello.update_card(id=id, update_field='closed', updated_value=is_complete)
+
+
+@ct.tools_function(tools)
+def add_label_to_task(id: Annotated[str, 'The id of the task to update'],
+                      label_names: Annotated[list[str], 'The names of the label(s) to add to the task']):
+    """
+    Add one or more label(s) to a task.
+    """
+    label_names = [label_name.lower() for label_name in label_names]
+    label_ids_to_add = eager_get_label_ids(label_names)
+    card = trello.get_card(id)
+    label_ids_on_card = card['idLabels']
+    label_ids = list(set(label_ids_to_add + label_ids_on_card))
+    return trello.update_card(id=id, update_field='idLabels', updated_value=label_ids)
 
 class Todo:
 
@@ -97,33 +147,20 @@ class Todo:
         embedding = np.array(response.data[0].embedding)
         return embedding
 
-    def add_new_tasks(self, tasks) -> List[int]:
+    def add_new_tasks(self, tasks) -> list[int]:
         """
         Given a list of new tasks, add them to the database and return a
         list of the indexes of the added tasks.
         """
         # make a new trello card for each task
-        boards = trello.get_boards()
-        board_id = trello.find_dict_by_name(boards, 'Secretary')['id']
         cards = []
         for task in tasks:
-            # "topics": <a list of topic(s)>,
-            # "type": <one of [question, action_item]>,
-            # "due_date": <the due date, if any, formatted as "YYYY-MM-DD">,
-            # "requestor": <the person(s) the request is coming from>,
-            # "actor": <who should do the thing>,
-            # "summary": <a very concise summary of the item>,
-            # "notes": <direct quotes of all relevant information in the text needed to complete the task>
-            lists = trello.get_lists_on_board(board_id)
-            list_dict = trello.find_dict_by_name(lists, task['type'])
-            if not list_dict:
-                list_dict = trello.create_list(board_id, name=task['type'])
-            list_id = list_dict['id']
+            list_id = eager_get_list_id(board_name='Secretary', list_name=task['type'])
             if isinstance(task['requestor'], str):
                 description = f"Requestor: {task['requestor']}\nActor: {task['actor']}\n\n{task['notes']}"
             else:
                 description = task['notes']
-            label_ids = create_labels(task['topics'])
+            label_ids = eager_get_label_ids(task['topics'])
             response = trello.create_card(list_id,
                                           name=task['summary'],
                                           description=description,

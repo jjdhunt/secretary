@@ -118,9 +118,9 @@ def filter_tasks(tasks: list[dict[Any]]):
     return unfiltered_tasks
 
 @ct.tools_function(secretary_tools)
-def extract_tasks(message: Annotated[str, "The verbatim user message content to extract tasks from"]):
+def extract_tasks(message: Annotated[str, "The verbatim user message content to extract tasks from. This should include all content and context relevant to the task(s)."]):
     """
-    Given unformatted raw content from a user that mentions action items, tasks, or to-dos, this function extracts a formatted list of individual tasks.
+    Given raw unformatted content from a user that mentions action items, tasks, or to-dos, this function extracts individual tasks in a structured format.
     """
 
     current_datetime_string = datetime.now(timezone.utc).astimezone().strftime('%Y-%m-%d %I:%M:%S %p %Z')
@@ -159,7 +159,7 @@ def process_user_message(messages: list[Any]):
     full_messages += [{"role": "user", "content": f'Existing Tasks:\n{tasks_json}'}]
     full_messages += messages
 
-    combined_tools = {**trello.tools, **secretary_tools}
+    combined_tools = {**todo.tools, **secretary_tools}
     tool_schemas = [combined_tools[name]['schema'] for name in combined_tools]
     response, tool_calls = get_conversation_completion(messages=full_messages,
                                                 tools=tool_schemas)
@@ -190,6 +190,11 @@ def say_on_the_record(say, message):
 
 def handle_message(message, say):
 
+    if message['text'] == 'clear':
+        convo.clear()
+        say('(My mind is a blank slate)')
+        return
+    
     say("I hear you, let me think...")
 
     user_name = get_user_name(message['user'])
@@ -206,7 +211,7 @@ def handle_message(message, say):
         if len(updated_cards)==1: say_on_the_record(say, "I created/updated this task:\n" + "\n".join(card_urls))
         else: say_on_the_record(say, "I created/updated these tasks:\n"  + "\n".join(card_urls))
     
-    say("(OK, I'm gonna go mine some bitcoins, let me know if you need anything.)")
+    say("(OK, I'm gonna go mine some bitcoins, let me know if you need anything)")
 
 @app.event("message")
 def handle_message_events(body, say):
