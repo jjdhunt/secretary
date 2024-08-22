@@ -155,6 +155,8 @@ def process_user_message(messages: list[Any]):
     system_message = sm.base_secretary
     system_message += f'\nThe current date and time is {current_datetime_string}.'
 
+    print(current_datetime_string)
+    
     full_messages = [{"role": "system", "content": system_message}]
     full_messages += [{"role": "user", "content": f'Existing Tasks:\n{tasks_json}'}]
     full_messages += messages
