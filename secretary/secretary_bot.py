@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 from io import StringIO
 from datetime import datetime, timezone
+import pytz
 from typing import Annotated, Any, Literal, Optional
 
 import json
@@ -122,10 +123,7 @@ def extract_tasks(message: Annotated[str, "The verbatim user message content to 
     """
     Given raw unformatted content from a user that mentions action items, tasks, or to-dos, this function extracts individual tasks in a structured format.
     """
-
-    current_datetime_string = datetime.now(timezone.utc).astimezone().strftime('%Y-%m-%d %I:%M:%S %p %Z')
     system_message = sm.extract_action_items
-    system_message += f'\nThe current date and time is {current_datetime_string}.'
     existing_labels_str = ', '.join(todo.get_labels().keys())
     comment = f'{message}\n\nExisting Labels:\n{existing_labels_str}'
     response, _ = get_completion(comment=comment, system_message=system_message)
@@ -150,13 +148,7 @@ def process_user_message(messages: list[Any]):
     # Retrieve existing tasks
     existing_tasks = todos.get_relevant_tasks(messages)
     tasks_json = json.dumps(existing_tasks)
-    current_datetime_string = datetime.now(timezone.utc).astimezone().strftime('%Y-%m-%d %I:%M:%S %p %Z')
-
     system_message = sm.base_secretary
-    system_message += f'\nThe current date and time is {current_datetime_string}.'
-
-    print(current_datetime_string)
-    
     full_messages = [{"role": "system", "content": system_message}]
     full_messages += [{"role": "user", "content": f'Existing Tasks:\n{tasks_json}'}]
     full_messages += messages
@@ -181,10 +173,15 @@ def process_user_message(messages: list[Any]):
     
     return response, updated_cards
 
-def get_user_name(userID):
-    uname = app.client.users_profile_get(user=userID) 
-    return uname['profile']['real_name_normalized']
+def get_user_name(userID) -> str:
+    response = app.client.users_profile_get(user=userID)
+    return response['profile']['real_name_normalized']
 
+def get_user_timezone(userID) -> str:
+    response = app.client.users_info(user=userID)
+    user_info = response['user']
+    return user_info.get('tz', 'Unknown Timezone')
+    
 def say_on_the_record(say, message):
     if message:
         convo.add_message('assistant', message)
@@ -200,7 +197,9 @@ def handle_message(message, say):
     say("I hear you, let me think...")
 
     user_name = get_user_name(message['user'])
-    msg = f"From: {user_name}\n{message['text']}"
+    user_timezone = get_user_timezone(message['user'])
+    current_user_local_time = datetime.now(pytz.timezone(user_timezone)).strftime('%Y-%m-%d %H:%M:%S %z')#.strftime('%Y-%m-%d %I:%M:%S %p %Z')
+    msg = f"({current_user_local_time}) From {user_name}: \n{message['text']}"
 
     convo.add_message('user', msg)
 

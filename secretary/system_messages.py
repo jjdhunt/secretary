@@ -15,7 +15,7 @@ Each action item should be formatted as json object and all the action items sho
   {
     "topics": <an array of one or more general topics>,
     "type": <one of [Questions, Action Items]>,
-    "due_date": <the due datetime, if any, formatted as "YYYY-MM-DD HH:MM:SS">,
+    "due_date": <the due datetime, if any, formatted as "YYYY-MM-DD HH:MM:SS +<UTC offset>">,
     "requestor": <the person(s) the request is coming from>,
     "actor": <who should do the thing>,
     "summary": <a concise summary of the item>,

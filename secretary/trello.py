@@ -5,8 +5,6 @@ import json
 from typing import Any, Optional
 from datetime import datetime
 
-from secretary.util import convert_time_to_iso8601
-
 load_dotenv()
 
 TRELLO_API_KEY = os.environ['TRELLO_API_KEY']
@@ -192,8 +190,7 @@ def create_card(list_id: str,
     'token': os.environ['TRELLO_OAUTH_TOKEN']
     }
 
-    due_date_utc = convert_time_to_iso8601(due, "America/Los_Angeles")
-    if due_date_utc: query['due'] = due_date_utc
+    if due: query['due'] = due
 
     response = requests.request(
     "POST",

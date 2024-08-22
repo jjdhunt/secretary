@@ -11,6 +11,7 @@ from typing import Annotated, Any, Optional, Union, List, Tuple
 
 import secretary.trello as trello
 import secretary.chat_tools as ct
+from secretary.util import convert_time_to_iso8601
 
 tools = {}
 
@@ -84,11 +85,12 @@ def update_task_description(id: Annotated[str, 'The id of the task to update'],
 
 @ct.tools_function(tools)
 def update_task_due_date(id: Annotated[str, 'The id of the task to update'],
-                         updated_due_date: Annotated[str, 'The new due date, formatted as "YYYY-MM-DD"']):
+                         updated_due_date: Annotated[str, 'The new due date, formatted as "YYYY-MM-DD HH:MM:SS +<UTC offset>"']):
     """
     Update the due date of a task.
     """
-    return trello.update_card(id=id, update_field='due', updated_value=updated_due_date)
+    due_date_utc = convert_time_to_iso8601(updated_due_date)
+    return trello.update_card(id=id, update_field='due', updated_value=due_date_utc)
 
 
 @ct.tools_function(tools)
@@ -161,10 +163,11 @@ class Todo:
             else:
                 description = task['notes']
             label_ids = eager_get_label_ids(task['topics'])
+            due_date_utc = convert_time_to_iso8601(task['due_date'])
             response = trello.create_card(list_id,
                                           name=task['summary'],
                                           description=description,
-                                          due=task['due_date'],
+                                          due=due_date_utc,
                                           label_ids=label_ids)
             cards.append(response)
 
