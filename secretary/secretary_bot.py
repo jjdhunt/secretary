@@ -154,7 +154,7 @@ def process_user_message(messages: list[Any]):
     global user_time_zone_global
 
     # Retrieve existing tasks
-    existing_tasks = todos_global.get_relevant_tasks(messages)
+    existing_tasks = todos_global.get_relevant_tasks(messages, user_time_zone_global)
     tasks_json = json.dumps(existing_tasks)
     system_message = sm.base_secretary
     current_user_local_time = datetime.now(pytz.timezone(user_time_zone_global)).strftime('%Y-%m-%d %H:%M:%S %z')

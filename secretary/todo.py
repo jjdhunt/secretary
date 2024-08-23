@@ -11,7 +11,7 @@ from typing import Annotated, Any, Optional, Union, List, Tuple
 
 import secretary.trello as trello
 import secretary.chat_tools as ct
-from secretary.util import convert_time_to_iso8601
+from secretary.util import convert_time_to_iso8601, convert_iso8601_to_local
 
 tools = {}
 
@@ -38,9 +38,11 @@ def clean_tasks(cards):
 
     return cleaned_cards
 
-def get_tasks():
+def get_tasks(timezone_str: Annotated[str, "A string giving the time zone to represent the tasks' time in."]):
     board_id = trello.get_board_id(board_name='Secretary')
     cards = trello.get_cards_on_board(board_id)
+    for card in cards:
+        card['due'] = convert_iso8601_to_local(card['due'], timezone_str)
     return cards
 
 def get_labels():
@@ -123,8 +125,10 @@ class Todo:
         # Defaults to os.environ.get("OPENAI_API_KEY"), otherwise use: api_key="API_Key",
         self.client = OpenAI()
 
-    def get_relevant_tasks(self, content):
-        tasks = get_tasks()
+    def get_relevant_tasks(self,
+                           content,
+                           timezone_str: Annotated[str, "A string giving the time zone to represent the tasks' time in."]):
+        tasks = get_tasks(timezone_str)
         tasks = clean_tasks(tasks)
         # similar_task_threshold = 0.3 # a bit of ad-hoc testing showed about 0.2 is a good threshold
         # similarity = self.get_task_similarity(tasks, content) #TODO
