@@ -24,12 +24,10 @@ SLACK_BOT_TOKEN = os.environ['SLACK_BOT_TOKEN']
 SLACK_APP_TOKEN = os.environ['SLACK_APP_TOKEN']
 app = App(token=SLACK_BOT_TOKEN)
 
-client = OpenAI(
+openai_client_global = OpenAI(
     # Defaults to os.environ.get("OPENAI_API_KEY")
     # Otherwise use: api_key="API_Key",
 )
-
-todos = todo.Todo()
 
 class Messages():
 
@@ -39,20 +37,25 @@ class Messages():
     def clear(self):
         self.messages = []
 
+    def keep_last(self, n: int):
+        """Drop all but the last n messages."""
+        self.messages = self.messages[-n:]
+
     def add_message(self, role: Literal['user', 'assistant'], message: str):
         message = {"role": role, "content": message}
         self.messages.append(message)
 
-convo = Messages()
-
-secretary_tools = {}
+convo_global = Messages()
+secretary_tools_global = {}
+user_time_zone_global = None
+todos_global = todo.Todo()
 
 def get_completion(comment, system_message, model_class='best', tools=None, temperature=0):
 
     models = {'fast': 'gpt-4o-mini',
               'best': 'gpt-4o'}
 
-    completion = client.chat.completions.create(
+    completion = openai_client_global.chat.completions.create(
                                                 model=models[model_class],
                                                 temperature=temperature,
                                                 tools=tools,
@@ -68,7 +71,7 @@ def get_conversation_completion(messages, model_class='best', tools=None, temper
     models = {'fast': 'gpt-4o-mini',
               'best': 'gpt-4o'}
 
-    completion = client.chat.completions.create(
+    completion = openai_client_global.chat.completions.create(
                                                 model=models[model_class],
                                                 temperature=temperature,
                                                 tools=tools,
@@ -118,12 +121,15 @@ def filter_tasks(tasks: list[dict[Any]]):
     unfiltered_tasks = [task for task in tasks if task['id'] in task_ids]
     return unfiltered_tasks
 
-@ct.tools_function(secretary_tools)
-def extract_tasks(message: Annotated[str, "The verbatim user message content to extract tasks from. This should include all content and context relevant to the task(s)."]):
+@ct.tools_function(secretary_tools_global)
+def extract_tasks(message: Annotated[str, "The verbatim user message content to extract tasks from. This should include all content and context relevant to the task(s)."]) -> list[Any]:
     """
     Given raw unformatted content from a user that mentions action items, tasks, or to-dos, this function extracts individual tasks in a structured format.
     """
+    global user_time_zone_global
     system_message = sm.extract_action_items
+    current_user_local_time = datetime.now(pytz.timezone(user_time_zone_global)).strftime('%Y-%m-%d %H:%M:%S %z')
+    system_message += f'\nThe current date and time is {current_user_local_time}.'
     existing_labels_str = ', '.join(todo.get_labels().keys())
     comment = f'{message}\n\nExisting Labels:\n{existing_labels_str}'
     response, _ = get_completion(comment=comment, system_message=system_message)
@@ -131,13 +137,13 @@ def extract_tasks(message: Annotated[str, "The verbatim user message content to 
     for i, task in enumerate(new_tasks):
         task['id'] = i
 
-    if len(new_tasks)>0:
-        existing_tasks = todos.get_relevant_tasks(message) # Tasks may have been updated so retrieve them again
-        new_tasks = identify_novel_tasks(existing_tasks, new_tasks)
-    if len(new_tasks)>0:
-        new_tasks = filter_tasks(new_tasks)
+    # if len(new_tasks)>0:
+    #     existing_tasks = todos.get_relevant_tasks(message) # Tasks may have been updated so retrieve them again
+    #     new_tasks = identify_novel_tasks(existing_tasks, new_tasks)
+    # if len(new_tasks)>0:
+    #     new_tasks = filter_tasks(new_tasks)
 
-    new_cards = todos.add_new_tasks(new_tasks)
+    new_cards = todos_global.add_new_tasks(new_tasks)
 
     return new_cards
 
@@ -145,19 +151,24 @@ def process_user_message(messages: list[Any]):
     """
     Given a message from a user, decide what to do and do it.
     """
+    global user_time_zone_global
+
     # Retrieve existing tasks
-    existing_tasks = todos.get_relevant_tasks(messages)
+    existing_tasks = todos_global.get_relevant_tasks(messages)
     tasks_json = json.dumps(existing_tasks)
     system_message = sm.base_secretary
+    current_user_local_time = datetime.now(pytz.timezone(user_time_zone_global)).strftime('%Y-%m-%d %H:%M:%S %z')
+    system_message += f'\nThe current date and time is {current_user_local_time}.'
     full_messages = [{"role": "system", "content": system_message}]
     full_messages += [{"role": "user", "content": f'Existing Tasks:\n{tasks_json}'}]
     full_messages += messages
 
-    combined_tools = {**todo.tools, **secretary_tools}
+    combined_tools = {**todo.tools, **secretary_tools_global}
     tool_schemas = [combined_tools[name]['schema'] for name in combined_tools]
     response, tool_calls = get_conversation_completion(messages=full_messages,
                                                 tools=tool_schemas)
     
+    created_cards = []
     updated_cards = []
     if tool_calls is not None:
         # Iterate through tool calls
@@ -166,12 +177,12 @@ def process_user_message(messages: list[Any]):
             arguments = json.loads(tool_call.function.arguments)
             func = combined_tools[func_name]['callable']
             card = func(**arguments)
-            if isinstance(card, list):
-                updated_cards += card
+            if func_name=='extract_tasks':
+                created_cards += card # extract_tasks return a list of tasks
             else:
                 updated_cards.append(card)
     
-    return response, updated_cards
+    return response, created_cards, updated_cards
 
 def get_user_name(userID) -> str:
     response = app.client.users_profile_get(user=userID)
@@ -184,35 +195,40 @@ def get_user_timezone(userID) -> str:
     
 def say_on_the_record(say, message):
     if message:
-        convo.add_message('assistant', message)
+        convo_global.add_message('assistant', message)
         say(message)
 
 def handle_message(message, say):
+    global user_time_zone_global
 
     if message['text'] == 'clear':
-        convo.clear()
+        convo_global.clear()
         say('(My mind is a blank slate)')
         return
-    
-    say("I hear you, let me think...")
+
+    # say("(I hear you, let me think...)")
+
+    convo_global.keep_last(5)
 
     user_name = get_user_name(message['user'])
-    user_timezone = get_user_timezone(message['user'])
-    current_user_local_time = datetime.now(pytz.timezone(user_timezone)).strftime('%Y-%m-%d %H:%M:%S %z')#.strftime('%Y-%m-%d %I:%M:%S %p %Z')
-    msg = f"({current_user_local_time}) From {user_name}: \n{message['text']}"
+    user_time_zone_global = get_user_timezone(message['user'])
+    msg = f"From {user_name}:\n{message['text']}"
+    convo_global.add_message('user', msg)
 
-    convo.add_message('user', msg)
-
-    response, updated_cards = process_user_message(convo.messages)
+    response, created_cards, updated_cards = process_user_message(convo_global.messages)
     say_on_the_record(say, response)
 
+    if len(created_cards)>0:
+        card_urls = [card['url'] for card in created_cards]
+        if len(card_urls)==1: say_on_the_record(say, "I created this task:\n" + "\n".join(card_urls))
+        else: say_on_the_record(say, "I created these tasks:\n"  + "\n".join(card_urls))
+    
     if len(updated_cards)>0:
         card_urls = [card['url'] for card in updated_cards]
-        # send updated card urls to user
-        if len(updated_cards)==1: say_on_the_record(say, "I created/updated this task:\n" + "\n".join(card_urls))
-        else: say_on_the_record(say, "I created/updated these tasks:\n"  + "\n".join(card_urls))
-    
-    say("(OK, I'm gonna go mine some bitcoins, let me know if you need anything)")
+        if len(card_urls)==1: say_on_the_record(say, "I updated this task:\n" + "\n".join(card_urls))
+        else: say_on_the_record(say, "I updated these tasks:\n"  + "\n".join(card_urls))
+
+    # say("(OK, I'm gonna go mine some bitcoins, let me know if you need anything)")
 
 @app.event("message")
 def handle_message_events(body, say):
