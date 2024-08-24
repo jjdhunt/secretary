@@ -16,6 +16,37 @@ def _find_dict_by_name(dict_list, target_name):
             return d
     return None
     
+def create_board(name: str):
+    url = "https://api.trello.com/1/boards/"
+
+    query = {
+        'name': name,
+        'key': TRELLO_API_KEY,
+        'token': TRELLO_OAUTH_TOKEN
+    }
+
+    response = requests.request(
+        "POST",
+        url,
+        params=query
+    )
+
+    return json.loads(response.text)['id']
+
+def delete_board(board_id: str):
+    url = f"https://api.trello.com/1/boards/{board_id}"
+
+    query = {
+        'key': TRELLO_API_KEY,
+        'token': TRELLO_OAUTH_TOKEN
+    }
+
+    response = requests.request(
+        "DELETE",
+        url,
+        params=query
+    )
+ 
 def get_boards():
     url = 'https://api.trello.com/1/members/me/boards'
 
@@ -173,7 +204,7 @@ def create_card(list_id: str,
                 name: str,
                 description: str = '',
                 label_ids: list[str] = [],
-                due: Optional[str] = None):
+                due: Optional[str] = None) -> dict[str, Any]:
     # https://developer.atlassian.com/cloud/trello/rest/api-group-cards/#api-cards-post
     url = "https://api.trello.com/1/cards"
 
