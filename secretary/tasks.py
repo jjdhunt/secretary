@@ -71,7 +71,7 @@ def clean_tasks(cards):
     return cleaned_cards
 
 
-def get_tasks(timezone_str: Annotated[str, "A string giving the time zone to represent the tasks' time in."]):
+def get_tasks(timezone_str: Annotated[str, "A string giving the time zone to represent the tasks' time in."] = 'UTC'):
     board_id = utils_trello.get_board_id(board_name=BOARD_NAME)
     cards = utils_trello.get_cards_on_board(board_id)
     for card in cards:
@@ -135,6 +135,10 @@ def update_task_completion(id: Annotated[str, 'The id of the task to update'],
     """
     Change the completion status of a task.
     """
+    if not is_complete:
+        utils_trello.delete_card(id=id)
+        return None
+    
     return utils_trello.update_card(id=id, update_field='closed', updated_value=is_complete)
 
 

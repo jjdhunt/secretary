@@ -22,14 +22,13 @@ app = App(token=os.environ['SLACK_BOT_TOKEN'])
 convo_global = ai.Messages()
 user_time_zone_global = 'UTC'
 
-def extract_tasks_base(message: Annotated[str, "The message content to extract tasks from."]) -> list[Any]:
+def extract_tasks_base(message: Annotated[str, "The message content to extract tasks from."],
+                       current_user_local_time: Annotated[str, "The user's local datetime formatted as '%Y-%m-%d %H:%M:%S %z'"]) -> list[Any]:
     """
     Given raw unformatted content from a user that mentions action items, tasks, or to-dos,
     this function extracts individual tasks in a structured format.
     """
-    global user_time_zone_global
     system_message = sm.extract_action_items
-    current_user_local_time = datetime.now(pytz.timezone(user_time_zone_global)).strftime('%Y-%m-%d %H:%M:%S %z')
     system_message += f'\nThe current date and time is {current_user_local_time}.'
     existing_labels_str = ', '.join(tasks.get_labels().keys())
     comment = f'{message}\n\nExisting Labels:\n{existing_labels_str}'
@@ -41,13 +40,18 @@ def extract_tasks(message: Annotated[str, "The verbatim user message content to 
     """
     Given raw unformatted content from a user that mentions action items, tasks, or to-dos, this function extracts individual tasks in a structured format.
     """
-    new_tasks = extract_tasks_base(message)
+    global user_time_zone_global
+    current_user_local_time = datetime.now(pytz.timezone(user_time_zone_global)).strftime('%Y-%m-%d %H:%M:%S %z')
+    new_tasks = extract_tasks_base(message, current_user_local_time)
+    print(message)
+    print(new_tasks)
     new_cards = tasks.add_new_tasks(new_tasks)
     return new_cards
-    
+
+     
 def process_user_message(messages: list[Any]):
     """
-    Given a message from a user, decide what to do and do it.
+    Given a message from a user, decide what to do and then do it.
     """
     global user_time_zone_global
 
@@ -61,6 +65,8 @@ def process_user_message(messages: list[Any]):
     full_messages += [{"role": "user", "content": f'Existing Tasks:\n{tasks_json}'}]
     full_messages += messages
 
+    print(messages)
+    
     # Build the tools
     tools = {}
     ai.add_function_to_tools(tools, tasks.update_task_description)
@@ -76,10 +82,12 @@ def process_user_message(messages: list[Any]):
     
     created_cards = []
     updated_cards = []
+    tools_called = []
     if tool_calls is not None:
         # Iterate through tool calls
         for tool_call in tool_calls:
             func_name = tool_call.function.name
+            tools_called.append(func_name)
             arguments = json.loads(tool_call.function.arguments)
             func = tools[func_name]['callable']
             card = func(**arguments)
@@ -88,7 +96,7 @@ def process_user_message(messages: list[Any]):
             else:
                 updated_cards.append(card)
     
-    return response, created_cards, updated_cards
+    return response, created_cards, updated_cards, tools_called
 
 def get_user_name(userID) -> str:
     response = app.client.users_profile_get(user=userID)
@@ -102,28 +110,27 @@ def get_user_timezone(userID) -> str:
 def say_on_the_record(say, message):
     if message:
         convo_global.add_message('assistant', message)
-        say(message)
+        if say: say(message)
 
-def handle_message(message, say):
-    global user_time_zone_global
+def handle_message(user_name, message_text, say=None):
     
-    if message['text'] == 'clear':
+    if message_text == 'clear':
         convo_global.clear()
-        say('(My mind is a blank slate)')
+        if say: say('(My mind is a blank slate)')
         return
 
     # say("(I hear you, let me think...)")
 
     convo_global.keep_last(6)
 
-    user_name = get_user_name(message['user'])
-    user_time_zone_global = get_user_timezone(message['user'])
-    msg = f"From {user_name}:\n{message['text']}"
+    msg = f"From {user_name}:\n{message_text}"
     convo_global.add_message('user', msg)
 
-    response, created_cards, updated_cards = process_user_message(convo_global.messages)
-    say_on_the_record(say, response)
+    print(msg)
+    response, created_cards, updated_cards, tools_called = process_user_message(convo_global.messages)
+    if say: say_on_the_record(say, response)
 
+    # Reply to the user
     if len(created_cards)>0:
         card_urls = [card['url'] for card in created_cards]
         if len(card_urls)==1: say_on_the_record(say, "I created this task:\n" + "\n".join(card_urls))
@@ -136,11 +143,21 @@ def handle_message(message, say):
 
     # say("(OK, I'm gonna go mine some bitcoins, let me know if you need anything)")
 
+    return response, tools_called
+
 @app.event("message")
 def handle_message_events(body, say):
+    global user_time_zone_global
+
     if 'text' not in body['event']:
         return
-    handle_message(body['event'], say)
+    
+    user_name = get_user_name(body['event']['user'])
+    user_time_zone_global = get_user_timezone(body['event']['user'])
+
+    handle_message(user_name,
+                   body['event']['text'],
+                   say)
 
 if __name__ == "__main__":
     handler = SocketModeHandler(app, os.environ['SLACK_APP_TOKEN'])

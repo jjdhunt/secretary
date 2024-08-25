@@ -233,6 +233,20 @@ def create_card(list_id: str,
     return json.loads(response.text)
 
 
+def delete_card(id: str):
+    url = f"https://api.trello.com/1/cards/{id}"
+
+    query = {
+        'key': TRELLO_API_KEY,
+        'token': TRELLO_OAUTH_TOKEN
+    }
+
+    response = requests.request(
+        "DELETE",
+        url,
+        params=query
+    )
+
 def update_card(id: str,
                 update_field: str,
                 updated_value: Any):
