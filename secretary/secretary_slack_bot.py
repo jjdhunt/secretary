@@ -78,6 +78,7 @@ def process_user_message(messages: list[Any]):
     
     created_cards = []
     updated_cards = []
+    done_cards = []
     tools_called = []
     if tool_calls is not None:
         # Iterate through tool calls
@@ -89,10 +90,12 @@ def process_user_message(messages: list[Any]):
             card = func(**arguments)
             if func_name=='extract_tasks':
                 created_cards += card # extract_tasks return a list of tasks
+            elif func_name=='update_task_completion':
+                done_cards.append(card)
             else:
                 updated_cards.append(card)
     
-    return response, created_cards, updated_cards, tools_called
+    return response, created_cards, updated_cards, done_cards, tools_called
 
 def get_user_name(userID) -> str:
     response = app.client.users_profile_get(user=userID)
@@ -116,6 +119,47 @@ def say_card_links(say, comment_single, comment_multiple, cards):
         if len(card_links)==1: say_on_the_record(say, f"{comment_single}\n" + "\n".join(card_links).lstrip('  1. '))
         else: say_on_the_record(say, f"{comment_multiple}\n"  + "\n".join(card_links))
 
+
+def talk_through_tasks(say, updated_cards, created_cards, done_cards):
+
+    # Tell the user about updated tasks
+    say_card_links(say, "Great! I marked this task as done (and deleted it):", "Cool, I marked these tasks as done (and deleted them):", done_cards)
+
+    if (len(created_cards) >= 1) and (len(updated_cards) >= 1):
+        say_on_the_record(say, "I updated some and I created some. Let me tell you about the updates first...")
+
+    # Tell the user about updated tasks
+    say_card_links(say, "I updated this task:", "I updated these tasks:", updated_cards)
+
+    # Follow up on updated tasks with no due date
+    cards_to_follow_up_on = [card for card in updated_cards if card['due'] is None]
+    if len(cards_to_follow_up_on) > 0:
+        if (len(cards_to_follow_up_on) == 1) and (len(updated_cards) == 1):
+            say_on_the_record(say, "When I was updating that task I noticed it doesn't have a due date, probably my mistake. Can you give me a due date for it?")
+        elif (len(cards_to_follow_up_on) == len(updated_cards)) & (len(updated_cards) == 2):
+            say_on_the_record(say, "When I was updating those I noticed that neither of them have due dates! Suggestions??")
+        elif (len(cards_to_follow_up_on) == len(updated_cards)):
+            say_on_the_record(say, "When I was updating those, I was shocked to see none of them have due dates :flushed: don't know how that happened. Could you help me out and give me some suggestions? :pray:")
+        else:
+            say_card_links(say, "I couldn't figure out a due date for this one. What should it be?", "When I was updating them, I noticed some didn't have due dates! Don't know how that happened. Could you give me some suggestions on due dates for these: :pray:", cards_to_follow_up_on)
+
+    if (len(created_cards) >= 1) and (len(updated_cards) >= 1):
+        say_on_the_record(say, "Now on to my creations...")
+
+    # Tell the user about created tasks
+    say_card_links(say, "I created this task:", "I created these tasks:", created_cards)
+
+    # Follow up on created cards with no due date
+    cards_to_follow_up_on = [card for card in created_cards if card['due'] is None]
+    if len(cards_to_follow_up_on) > 0:
+        if (len(cards_to_follow_up_on) == 1) and (len(created_cards) == 1):
+            say_on_the_record(say, "Can you give me a due date for it? :smile:")
+        elif (len(cards_to_follow_up_on) == len(created_cards)):
+            say_on_the_record(say, "but none have due dates. Could you give me some due dates for them? :pray:")
+        else:
+            say_card_links(say, "I couldn't figure out a due date for this one. What should it be?", "I wasn't sure about the due dates for these though. Any suggestions?", cards_to_follow_up_on)
+
+
 def handle_message(user_name, message_text, say=None):
     global convo_global
 
@@ -131,17 +175,11 @@ def handle_message(user_name, message_text, say=None):
     msg = f"From {user_name}:\n{message_text}"
     convo_global.add_message('user', msg)
 
-    response, created_cards, updated_cards, tools_called = process_user_message(convo_global.messages)
+    response, created_cards, updated_cards, done_cards, tools_called = process_user_message(convo_global.messages)
+
     if say: say_on_the_record(say, response)
 
-    # Reply to the user
-    say_card_links(say, "I created this task:", "I created these tasks:", created_cards)
-
-    say_card_links(say, "I updated this task:", "I updated these tasks:", updated_cards)
-
-    # Follow up on cards with no due date
-    cards_to_follow_up_on = [card for card in created_cards if card['due'] is None]
-    say_card_links(say, "This card has no due date. What should it be?", "These cards have no due dates. What should they be?", cards_to_follow_up_on)
+    talk_through_tasks(say, updated_cards, created_cards, done_cards)
 
     # say("(OK, I'm gonna go mine some bitcoins, let me know if you need anything)")
 
