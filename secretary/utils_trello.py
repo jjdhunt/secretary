@@ -247,6 +247,8 @@ def delete_card(id: str):
         params=query
     )
 
+    return json.loads(response.text)
+
 def update_card(id: str,
                 update_field: str,
                 updated_value: Any):

@@ -43,8 +43,6 @@ def extract_tasks(message: Annotated[str, "The verbatim user message content to 
     global user_time_zone_global
     current_user_local_time = datetime.now(pytz.timezone(user_time_zone_global)).strftime('%Y-%m-%d %H:%M:%S %z')
     new_tasks = extract_tasks_base(message, current_user_local_time)
-    print(message)
-    print(new_tasks)
     new_cards = tasks.add_new_tasks(new_tasks)
     return new_cards
 
@@ -65,8 +63,6 @@ def process_user_message(messages: list[Any]):
     full_messages += [{"role": "user", "content": f'Existing Tasks:\n{tasks_json}'}]
     full_messages += messages
 
-    print(messages)
-    
     # Build the tools
     tools = {}
     ai.add_function_to_tools(tools, tasks.update_task_description)
@@ -108,12 +104,21 @@ def get_user_timezone(userID) -> str:
     return user_info.get('tz', 'Unknown Timezone')
     
 def say_on_the_record(say, message):
+    global convo_global
+
     if message:
         convo_global.add_message('assistant', message)
         if say: say(message)
 
+def say_card_links(say, comment_single, comment_multiple, cards):
+    if len(cards)>0:
+        card_links = [f'  {i+1}. <{card['url']}|{card['name']}>' for i, card in enumerate(cards)]
+        if len(card_links)==1: say_on_the_record(say, f"{comment_single}\n" + "\n".join(card_links).lstrip('  1. '))
+        else: say_on_the_record(say, f"{comment_multiple}\n"  + "\n".join(card_links))
+
 def handle_message(user_name, message_text, say=None):
-    
+    global convo_global
+
     if message_text == 'clear':
         convo_global.clear()
         if say: say('(My mind is a blank slate)')
@@ -126,20 +131,17 @@ def handle_message(user_name, message_text, say=None):
     msg = f"From {user_name}:\n{message_text}"
     convo_global.add_message('user', msg)
 
-    print(msg)
     response, created_cards, updated_cards, tools_called = process_user_message(convo_global.messages)
     if say: say_on_the_record(say, response)
 
     # Reply to the user
-    if len(created_cards)>0:
-        card_urls = [card['url'] for card in created_cards]
-        if len(card_urls)==1: say_on_the_record(say, "I created this task:\n" + "\n".join(card_urls))
-        else: say_on_the_record(say, "I created these tasks:\n"  + "\n".join(card_urls))
-    
-    if len(updated_cards)>0:
-        card_urls = [card['url'] for card in updated_cards]
-        if len(card_urls)==1: say_on_the_record(say, "I updated this task:\n" + "\n".join(card_urls))
-        else: say_on_the_record(say, "I updated these tasks:\n"  + "\n".join(card_urls))
+    say_card_links(say, "I created this task:", "I created these tasks:", created_cards)
+
+    say_card_links(say, "I updated this task:", "I updated these tasks:", updated_cards)
+
+    # Follow up on cards with no due date
+    cards_to_follow_up_on = [card for card in created_cards if card['due'] is None]
+    say_card_links(say, "This card has no due date. What should it be?", "These cards have no due dates. What should they be?", cards_to_follow_up_on)
 
     # say("(OK, I'm gonna go mine some bitcoins, let me know if you need anything)")
 

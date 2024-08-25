@@ -135,9 +135,10 @@ def update_task_completion(id: Annotated[str, 'The id of the task to update'],
     """
     Change the completion status of a task.
     """
-    if not is_complete:
+    if is_complete == 'true':
+        card = utils_trello.get_card(card_id=id)
         utils_trello.delete_card(id=id)
-        return None
+        return card
     
     return utils_trello.update_card(id=id, update_field='closed', updated_value=is_complete)
 
@@ -194,7 +195,7 @@ def add_new_tasks(tasks) -> list[dict[str, Any]]:
         label_ids = eager_get_label_ids(task['topics'])
         due_date_utc = convert_time_to_iso8601(task['due_date'])
         response = utils_trello.create_card(list_id,
-                                        name=task['summary'],
+                                        name=task['summary'].rstrip('.'), # no periods on the end of card names just because it looks nicer w/o them
                                         description=description,
                                         due=due_date_utc,
                                         label_ids=label_ids)
