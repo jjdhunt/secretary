@@ -93,7 +93,7 @@ def test_processing_user_messages(test_board):
     assert len(cards) == 0
 
     # Test that Secretary extracts one task from a simple task message
-    response, tools_called = sb.handle_message('Jack', 'I should go to the store and buy some bacon and eggs today.')
+    response, tools_called = sb.handle_message('Jack', 'I should go shopping and buy some bacon and eggs today.')
     cards = tasks.get_tasks()
     assert response is None
     assert len(tools_called) == 1
@@ -118,7 +118,7 @@ def test_processing_user_messages(test_board):
     assert len(tools_called) == 0
 
     # Test calling the label tool
-    response, tools_called = sb.handle_message('Jack', "Please label my shopping task as 'nom nom")
+    response, tools_called = sb.handle_message('Jack', "Please add the label 'brunch' to my shopping task")
     assert response is None
     assert len(tools_called) == 1
     assert tools_called[0] == 'add_label_to_task'

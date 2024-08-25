@@ -46,7 +46,26 @@ def extract_tasks(message: Annotated[str, "The verbatim user message content to 
     new_cards = tasks.add_new_tasks(new_tasks)
     return new_cards
 
-     
+def task_follow_up(tasks):
+    """
+    Given a conversation with the user, ask for due dates.
+    """
+    global user_time_zone_global
+    global convo_global
+
+    # Build the system and user messages
+    tasks_json = json.dumps(tasks)
+    system_message = sm.follow_up_on_tasks
+    current_user_local_time = datetime.now(pytz.timezone(user_time_zone_global)).strftime('%Y-%m-%d %H:%M:%S %z')
+    system_message += f'\nThe current date and time is {current_user_local_time}.'
+    full_messages = [{"role": "system", "content": system_message}]
+    full_messages += [{"role": "user", "content": f'Tasks:\n{tasks_json}'}]
+    full_messages += convo_global.messages
+    # Get the response/tool calls from the Chat API
+    response, _ = ai.get_conversation_completion(messages=full_messages)
+
+    return response
+
 def process_user_message(messages: list[Any]):
     """
     Given a message from a user, decide what to do and then do it.
@@ -109,61 +128,54 @@ def get_user_timezone(userID) -> str:
 def say_on_the_record(say, message):
     global convo_global
 
-    if message:
+    if message and len(message)>0:
         convo_global.add_message('assistant', message)
         if say: say(message)
 
-def say_card_links(say, comment_single, comment_multiple, cards):
-    if len(cards)>0:
+def format_card_links(cards) -> str:
+    if len(cards)==1:
+        card_links = [f"<{card['url']}|{card['name']}>" for card in cards]
+        return "\n".join(card_links)
+    elif len(cards)>1:
         card_links = [f"  {i+1}. <{card['url']}|{card['name']}>" for i, card in enumerate(cards)]
-        if len(card_links)==1: say_on_the_record(say, f"{comment_single}\n" + "\n".join(card_links).lstrip('  1. '))
-        else: say_on_the_record(say, f"{comment_multiple}\n"  + "\n".join(card_links))
+        return "\n".join(card_links)
+    return ""
 
+def say_card_links(say, cards, comment_single: str = "", comment_multiple: str = ""):
+    card_links = format_card_links(cards)
+    if len(cards)==1:
+        if comment_single == "":
+            say_on_the_record(say, card_links)
+        else:
+            say_on_the_record(say, f"{comment_single}\n" + card_links)
+    elif len(cards)>1:
+        if comment_multiple == "":
+            say_on_the_record(say, card_links)
+        else:
+            say_on_the_record(say, f"{comment_multiple}\n"  + card_links)
 
 def talk_through_tasks(say, updated_cards, created_cards, done_cards):
 
-    # Tell the user about updated tasks
-    say_card_links(say, "Great! I marked this task as done (and deleted it):", "Cool, I marked these tasks as done (and deleted them):", done_cards)
-
-    if (len(created_cards) >= 1) and (len(updated_cards) >= 1):
-        say_on_the_record(say, "I updated some and I created some. Let me tell you about the updates first...")
+    # Tell the user about completed tasks
+    say_card_links(say, done_cards, "Great! I marked this task as done (and deleted it):", "Cool, I marked these tasks as done (and deleted them):")
 
     # Tell the user about updated tasks
-    say_card_links(say, "I updated this task:", "I updated these tasks:", updated_cards)
-
-    # Follow up on updated tasks with no due date
-    cards_to_follow_up_on = [card for card in updated_cards if card['due'] is None]
-    if len(cards_to_follow_up_on) > 0:
-        if (len(cards_to_follow_up_on) == 1) and (len(updated_cards) == 1):
-            say_on_the_record(say, "When I was updating that task I noticed it doesn't have a due date, probably my mistake. Can you give me a due date for it?")
-        elif (len(cards_to_follow_up_on) == len(updated_cards)) & (len(updated_cards) == 2):
-            say_on_the_record(say, "When I was updating those I noticed that neither of them have due dates! Suggestions??")
-        elif (len(cards_to_follow_up_on) == len(updated_cards)):
-            say_on_the_record(say, "When I was updating those, I was shocked to see none of them have due dates :flushed: don't know how that happened. Could you help me out and give me some suggestions? :pray:")
-        else:
-            say_card_links(say, "I couldn't figure out a due date for this one. What should it be?", "When I was updating them, I noticed some didn't have due dates! Don't know how that happened. Could you give me some suggestions on due dates for these: :pray:", cards_to_follow_up_on)
-
-    if (len(created_cards) >= 1) and (len(updated_cards) >= 1):
-        say_on_the_record(say, "Now on to my creations...")
+    say_card_links(say, updated_cards, "I updated this task:", "I updated these tasks:")
 
     # Tell the user about created tasks
-    say_card_links(say, "I created this task:", "I created these tasks:", created_cards)
+    say_card_links(say, created_cards, "I created this task:", "I created these tasks:")
 
-    # Follow up on created cards with no due date
-    cards_to_follow_up_on = [card for card in created_cards if card['due'] is None]
-    if len(cards_to_follow_up_on) > 0:
-        if (len(cards_to_follow_up_on) == 1) and (len(created_cards) == 1):
-            say_on_the_record(say, "Can you give me a due date for it? :smile:")
-        elif (len(cards_to_follow_up_on) == len(created_cards)):
-            say_on_the_record(say, "but none have due dates. Could you give me some due dates for them? :pray:")
-        else:
-            say_card_links(say, "I couldn't figure out a due date for this one. What should it be?", "I wasn't sure about the due dates for these though. Any suggestions?", cards_to_follow_up_on)
-
+    # Follow up on tasks with no due date
+    cards_without_due_dates = [card for card in updated_cards if card['due'] is None] + [card for card in created_cards if card['due'] is None]
+    if len(cards_without_due_dates)>0:
+        follow_up_response = task_follow_up(cards_without_due_dates)
+        if follow_up_response:
+            say_on_the_record(say, follow_up_response.replace("LIST_OF_TASKS", format_card_links(cards_without_due_dates)))
 
 def handle_message(user_name, message_text, say=None):
     global convo_global
 
-    if message_text == 'clear':
+    if message_text.lower() == 'clear':
         convo_global.clear()
         if say: say('(My mind is a blank slate)')
         return

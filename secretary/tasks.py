@@ -124,7 +124,7 @@ def update_task_description(id: Annotated[str, 'The id of the task to update'],
 def update_task_due_date(id: Annotated[str, 'The id of the task to update'],
                          updated_due_date: Annotated[str, 'The new due date, formatted as "YYYY-MM-DD HH:MM:SS +<UTC offset>"']):
     """
-    Update the due date of a task.
+    Set or update the due date of a task.
     """
     due_date_utc = convert_time_to_iso8601(updated_due_date)
     return utils_trello.update_card(id=id, update_field='due', updated_value=due_date_utc)
