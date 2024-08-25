@@ -112,7 +112,7 @@ def say_on_the_record(say, message):
 
 def say_card_links(say, comment_single, comment_multiple, cards):
     if len(cards)>0:
-        card_links = [f'  {i+1}. <{card['url']}|{card['name']}>' for i, card in enumerate(cards)]
+        card_links = [f"  {i+1}. <{card['url']}|{card['name']}>" for i, card in enumerate(cards)]
         if len(card_links)==1: say_on_the_record(say, f"{comment_single}\n" + "\n".join(card_links).lstrip('  1. '))
         else: say_on_the_record(say, f"{comment_multiple}\n"  + "\n".join(card_links))
 
