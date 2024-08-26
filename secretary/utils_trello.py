@@ -1,3 +1,4 @@
+from contextlib import contextmanager
 from dotenv import load_dotenv 
 import os
 import requests
@@ -16,6 +17,24 @@ def _find_dict_by_name(dict_list, target_name):
             return d
     return None
     
+@contextmanager
+def test_board():
+    """
+    Usage example:
+    with test_board() as board_id:
+        print(f"Working with board: {board_id}")
+        # The board will automatically be deleted after this block, even if something fails
+    """
+    # Setup: Create the board
+    board_id = create_board('Test')
+    
+    try:
+        # Provide the board_id to the with statement block
+        yield board_id
+    finally:
+        # Teardown: Delete the board
+        delete_board(board_id)
+
 def create_board(name: str):
     url = "https://api.trello.com/1/boards/"
 

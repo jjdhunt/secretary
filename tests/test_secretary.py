@@ -82,69 +82,100 @@ def test_extracting_legalese_email(test_board):
     for task in tasks:
         assert task['actor'] == 'Jack'
         assert task['requestor'] in ['Susan Brode', 'Bob']
-        print(task['notes'])
         assert any(substring in task['notes'] for substring in task_notes)
 
 
 def test_processing_user_messages(test_board):
     # Starting with an empty board
     cards = tasks.get_tasks()
-    print(cards)
     assert len(cards) == 0
 
     # Test that Secretary extracts one task from a simple task message
-    response, tools_called = sb.handle_message('Jack', 'I should go shopping and buy some bacon and eggs today.')
+    responses, tools_called = sb.handle_message('Jack', 'I should go shopping and buy some bacon and eggs today.')
     cards = tasks.get_tasks()
-    assert response is None
+    assert responses['initial'] is None
     assert len(tools_called) == 1
     assert tools_called[0] == 'extract_tasks'
     assert len(cards) == 1
+    assert responses['follow_up'] is None
 
     # Test that Secretary extracts one task from a slightly more complicated message
-    response, tools_called = sb.handle_message('Jack', "Silvia needs to finish her paper draft by the end of the month, or else she'll miss her submission deadline!")
+    responses, tools_called = sb.handle_message('Jack', "Silvia needs to finish her paper draft by the end of the month, or else she'll miss her submission deadline!")
     cards = tasks.get_tasks()
-    assert response is None
+    assert responses['initial'] is None
     assert len(tools_called) == 1
     assert tools_called[0] == 'extract_tasks'
     assert len(cards) == 2
+    assert responses['follow_up'] is None
 
     # Test answering a question by retrieving the task from the database
     tools_called = sb.handle_message('Jack', 'clear') # clear conversation history so Secretary has to look at the tasks, not the conversation
     assert len(sb.convo_global.messages) == 0
-    response, tools_called = sb.handle_message('Jack', 'What do I need to buy at the store?')
-    assert response is not None
-    assert 'bacon' in response.lower()
-    assert 'eggs' in response.lower()
+    responses, tools_called = sb.handle_message('Jack', 'What do I need to buy at the store?')
+    assert responses['initial'] is not None
+    assert 'bacon' in responses['initial'].lower()
+    assert 'eggs' in responses['initial'].lower()
     assert len(tools_called) == 0
+    assert responses['follow_up'] is None
 
     # Test calling the label tool
-    response, tools_called = sb.handle_message('Jack', "Please add the label 'brunch' to my shopping task")
-    assert response is None
+    responses, tools_called = sb.handle_message('Jack', "Please add the label 'brunch' to my shopping task")
+    assert responses['initial'] is None
     assert len(tools_called) == 1
     assert tools_called[0] == 'add_label_to_task'
 
     # Test updating description the label tool
-    response, tools_called = sb.handle_message('Jack', "Please add cheese to my shopping")
-    assert response is None
+    responses, tools_called = sb.handle_message('Jack', "Please add cheese to my shopping")
+    assert responses['initial'] is None
     assert len(tools_called) == 1
     assert tools_called[0] == 'update_task_description'
 
     # Test answering a question by retrieving the task from the database, and make sure that Secretary added cheese to the card as we just asked.
     tools_called = sb.handle_message('Jack', 'clear') # clear conversation history so Secretary has to look at the tasks, not the conversation
     assert len(sb.convo_global.messages) == 0
-    response, tools_called = sb.handle_message('Jack', 'What do I need to buy at the store?')
-    assert response is not None
-    assert 'bacon' in response.lower()
-    assert 'eggs' in response.lower()
-    assert 'cheese' in response.lower()
+    responses, tools_called = sb.handle_message('Jack', 'What do I need to buy at the store?')
+    assert responses['initial'] is not None
+    assert 'bacon' in responses['initial'].lower()
+    assert 'eggs' in responses['initial'].lower()
+    assert 'cheese' in responses['initial'].lower()
     assert len(tools_called) == 0
+    assert responses['follow_up'] is None
+
+    # Test giving the Secretary information about a partial completion to which it should confirm completion and should not mark the task as complete
+    tools_called = sb.handle_message('Jack', 'clear') # clear conversation history so Secretary has to look at the tasks, not the conversation
+    assert len(sb.convo_global.messages) == 0
+    responses, tools_called = sb.handle_message('Jack', "I bought eggs.")
+    cards = tasks.get_tasks()
+    assert responses['initial'] is not None
+    assert len(tools_called) == 0
+    assert len(cards) == 2
 
     # Test marking tasks as complete, in which case they should be removed from the board
     tools_called = sb.handle_message('Jack', 'clear') # clear conversation history so Secretary has to look at the tasks, not the conversation
     assert len(sb.convo_global.messages) == 0
-    response, tools_called = sb.handle_message('Jack', "I finished the shopping!")
+    responses, tools_called = sb.handle_message('Jack', "I finished the grocery shopping!")
     cards = tasks.get_tasks()
-    assert response is None
     assert len(tools_called) == 1
-    assert tools_called[0] == 'update_task_completion'
+    assert tools_called[0] == 'mark_task_completed'
+    assert responses['initial'] is None
     assert len(cards) == 1
+
+def test_task_creation_follow_up(test_board):
+    # Starting with an empty board
+    cards = tasks.get_tasks()
+    assert len(cards) == 0
+
+    # Test that Secretary extracts one task from a simple task message
+    responses, tools_called = sb.handle_message('Bill', "Hello, Peter. Uh, could you give me those TPS reports ASAP? Mmmkay?")
+    cards = tasks.get_tasks()
+    assert responses['initial'] is None
+    assert len(tools_called) == 1
+    assert tools_called[0] == 'extract_tasks'
+    assert len(cards) == 1
+    assert 'Requestor: Bill' in cards[0]['desc']
+    assert 'Actor: Peter' in cards[0]['desc']
+    assert 'TPS reports' in cards[0]['desc']
+    # Secretary should have followed up about the task to ask for a due date.
+    # The follow up should have referred to the dateless task as LIST_OF_TASKS on its own line, something like
+    # "I could not figure out due dates for\nLIST_OF_TASKS\nCould you give me a suggestion?"
+    assert '\nLIST_OF_TASKS\n' in responses['follow_up']

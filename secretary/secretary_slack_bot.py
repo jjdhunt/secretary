@@ -86,7 +86,7 @@ def process_user_message(messages: list[Any]):
     tools = {}
     ai.add_function_to_tools(tools, tasks.update_task_description)
     ai.add_function_to_tools(tools, tasks.update_task_due_date)
-    ai.add_function_to_tools(tools, tasks.update_task_completion)
+    ai.add_function_to_tools(tools, tasks.mark_task_completed)
     ai.add_function_to_tools(tools, tasks.add_label_to_task)
     ai.add_function_to_tools(tools, extract_tasks)
     tool_schemas = [tools[name]['schema'] for name in tools]
@@ -109,7 +109,7 @@ def process_user_message(messages: list[Any]):
             card = func(**arguments)
             if func_name=='extract_tasks':
                 created_cards += card # extract_tasks return a list of tasks
-            elif func_name=='update_task_completion':
+            elif func_name=='mark_task_completed':
                 done_cards.append(card)
             else:
                 updated_cards.append(card)
@@ -154,24 +154,6 @@ def say_card_links(say, cards, comment_single: str = "", comment_multiple: str =
         else:
             say_on_the_record(say, f"{comment_multiple}\n"  + card_links)
 
-def talk_through_tasks(say, updated_cards, created_cards, done_cards):
-
-    # Tell the user about completed tasks
-    say_card_links(say, done_cards, "Great! I marked this task as done (and deleted it):", "Cool, I marked these tasks as done (and deleted them):")
-
-    # Tell the user about updated tasks
-    say_card_links(say, updated_cards, "I updated this task:", "I updated these tasks:")
-
-    # Tell the user about created tasks
-    say_card_links(say, created_cards, "I created this task:", "I created these tasks:")
-
-    # Follow up on tasks with no due date
-    cards_without_due_dates = [card for card in updated_cards if card['due'] is None] + [card for card in created_cards if card['due'] is None]
-    if len(cards_without_due_dates)>0:
-        follow_up_response = task_follow_up(cards_without_due_dates)
-        if follow_up_response:
-            say_on_the_record(say, follow_up_response.replace("LIST_OF_TASKS", format_card_links(cards_without_due_dates)))
-
 def handle_message(user_name, message_text, say=None):
     global convo_global
 
@@ -184,18 +166,33 @@ def handle_message(user_name, message_text, say=None):
 
     convo_global.keep_last(6)
 
+    responses = {'initial': None,
+                 'follow_up': None}
+    
     msg = f"From {user_name}:\n{message_text}"
     convo_global.add_message('user', msg)
-
+    
     response, created_cards, updated_cards, done_cards, tools_called = process_user_message(convo_global.messages)
+    responses['initial'] = response
 
-    if say: say_on_the_record(say, response)
+    say_on_the_record(say, response)
 
-    talk_through_tasks(say, updated_cards, created_cards, done_cards)
+    # Tell the user about completed, updated, and created tasks
+    say_card_links(say, done_cards, "Great! I marked this task as done (and deleted it):", "Cool, I marked these tasks as done (and deleted them):")
+    say_card_links(say, updated_cards, "I updated this task:", "I updated these tasks:")
+    say_card_links(say, created_cards, "I created this task:", "I created these tasks:")
+
+    # Follow up on tasks with no due date
+    cards_without_due_dates = [card for card in updated_cards if card['due'] is None] + [card for card in created_cards if card['due'] is None]
+    if len(cards_without_due_dates)>0:
+        follow_up_response = task_follow_up(cards_without_due_dates)
+        if follow_up_response:
+            say_on_the_record(say, follow_up_response.replace("LIST_OF_TASKS", format_card_links(cards_without_due_dates)))
+        responses['follow_up'] = follow_up_response
 
     # say("(OK, I'm gonna go mine some bitcoins, let me know if you need anything)")
 
-    return response, tools_called
+    return responses, tools_called
 
 @app.event("message")
 def handle_message_events(body, say):

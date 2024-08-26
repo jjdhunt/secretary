@@ -10,13 +10,11 @@ from typing import Literal, Optional
 
 load_dotenv()
 
-openai_client_global = OpenAI() # Defaults to api_keu = os.environ.get("OPENAI_API_KEY")
-
 ### Embeddings ###
 
 def get_embedding(content):
-    response = openai_client_global.embeddings.create(input=content,
-                                                      model="text-embedding-3-small")
+    response = OpenAI().embeddings.create(input=content,
+                                          model="text-embedding-3-small")
     embedding = np.array(response.data[0].embedding)
     return embedding
 
@@ -43,7 +41,7 @@ def get_completion(comment, system_message, model_class='best', tools=None, temp
     models = {'fast': 'gpt-4o-mini',
               'best': 'gpt-4o'}
 
-    completion = openai_client_global.chat.completions.create(
+    completion = OpenAI().chat.completions.create(
                                                 model=models[model_class],
                                                 temperature=temperature,
                                                 tools=tools,
@@ -59,7 +57,7 @@ def get_conversation_completion(messages, model_class='best', tools=None, temper
     models = {'fast': 'gpt-4o-mini',
               'best': 'gpt-4o'}
 
-    completion = openai_client_global.chat.completions.create(
+    completion = OpenAI().chat.completions.create(
                                                 model=models[model_class],
                                                 temperature=temperature,
                                                 tools=tools,

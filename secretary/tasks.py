@@ -7,8 +7,6 @@ from typing import Annotated, Any
 import secretary.utils_trello as utils_trello
 import secretary.utils_openai as ai
 
-tools = {}
-
 BOARD_NAME = 'Secretary'
 
 def convert_time_to_iso8601(datetime_str: Annotated[str, 'datetime in YYYY-MM-DD HH:MM:SS +UTC_offset format']):
@@ -139,9 +137,16 @@ def update_task_completion(id: Annotated[str, 'The id of the task to update'],
         card = utils_trello.get_card(card_id=id)
         utils_trello.delete_card(id=id)
         return card
-    
     return utils_trello.update_card(id=id, update_field='closed', updated_value=is_complete)
 
+
+def mark_task_completed(id: Annotated[str, 'The id of the task that is completed']):
+    """
+    Mark a task as completed.
+    """
+    card = utils_trello.get_card(card_id=id)
+    utils_trello.delete_card(id=id)
+    return card
 
 def add_label_to_task(id: Annotated[str, 'The id of the task to update'],
                       label_names: Annotated[list[str], 'The names of the label(s) to add to the task']):
