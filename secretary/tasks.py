@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Annotated
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 from typing import Annotated, Any
 
@@ -9,7 +9,7 @@ import secretary.utils_openai as ai
 
 BOARD_NAME = 'Secretary'
 
-def convert_time_to_iso8601(datetime_str: Annotated[str, 'datetime in YYYY-MM-DD HH:MM:SS +UTC_offset format']):
+def convert_time_to_iso8601_string(datetime_str: Annotated[str, 'datetime in YYYY-MM-DD HH:MM:SS +UTC_offset format']):
     # Try to convert the input string into a datetime. Will fail if it is not formatted as "YYYY-MM-DD HH:MM:SS +UTC"
     try:
         local = datetime.strptime(datetime_str, '%Y-%m-%d %H:%M:%S %z')
@@ -23,7 +23,7 @@ def convert_time_to_iso8601(datetime_str: Annotated[str, 'datetime in YYYY-MM-DD
     return utc_dt.isoformat()
 
 
-def convert_iso8601_to_local(utc_time_str, timezone_str):
+def convert_iso8601_to_local_string(utc_time_str, timezone_str):
 
     # Try to convert the input string into a datetime. Will fail if it is not formatted as ISO
     try:
@@ -69,13 +69,93 @@ def clean_tasks(cards):
     return cleaned_cards
 
 
-def get_tasks(timezone_str: Annotated[str, "A string giving the time zone to represent the tasks' time in."] = 'UTC'):
+def get_tasks(timezone_str: Annotated[str, "A string giving the time zone to represent the tasks' time in, eg. 'America/Los_Angeles'"] = 'UTC'):
+    """
+    Get all tasks on the BOARD_NAME board, with their due dates in local time zone.
+    """
     board_id = utils_trello.get_board_id(board_name=BOARD_NAME)
     cards = utils_trello.get_cards_on_board(board_id)
     for card in cards:
-        card['due'] = convert_iso8601_to_local(card['due'], timezone_str)
+        card['due'] = convert_iso8601_to_local_string(card['due'], timezone_str)
     return cards
 
+def overdue(timezone_str: Annotated[str, "A string giving the time zone to use as a reference for 'today', eg. 'America/Los_Angeles'"] = 'UTC'):
+    """
+    Get all overdue tasks.
+    """
+    board_id = utils_trello.get_board_id(board_name=BOARD_NAME)
+    cards = utils_trello.get_cards_on_board(board_id)
+    
+    now = datetime.now(pytz.timezone(timezone_str))
+
+    filtered_cards = []
+    for card in cards:
+        utc_time_str = card['due'][:-1] + '+00:00'
+        utc_time = datetime.fromisoformat(utc_time_str)
+        card['due'] = convert_iso8601_to_local_string(card['due'], timezone_str)
+        if now > utc_time:
+            filtered_cards.append(card)
+
+    return filtered_cards
+
+def get_tasks_between_dates(start_datetime: datetime, end_datetime: datetime, timezone_str: Annotated[str, "A string giving the time zone to represent the tasks' time in, eg. 'America/Los_Angeles'"] = 'UTC'):
+    board_id = utils_trello.get_board_id(board_name=BOARD_NAME)
+    cards = utils_trello.get_cards_on_board(board_id)
+    
+    filtered_cards = []
+    for card in cards:
+        utc_time_str = card['due'][:-1] + '+00:00'
+        utc_time = datetime.fromisoformat(utc_time_str)
+        card['due'] = convert_iso8601_to_local_string(card['due'], timezone_str)
+        if start_datetime <= utc_time <= end_datetime:
+            filtered_cards.append(card)
+
+    return filtered_cards
+
+def due_today(timezone_str: Annotated[str, "A string giving the time zone to use as a reference for 'today', eg. 'America/Los_Angeles'"] = 'UTC'):
+    """
+    Get the tasks due today, midnight to midnight in the specified timezone.
+    """
+    now = datetime.now(pytz.timezone(timezone_str))
+    lastnight_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    tonight_midnight = lastnight_midnight + timedelta(days=1)
+    return get_tasks_between_dates(lastnight_midnight, tonight_midnight, timezone_str)
+
+def due_earlier_today(timezone_str: Annotated[str, "A string giving the time zone to use as a reference for 'today', eg. 'America/Los_Angeles'"] = 'UTC'):
+    """
+    Get the tasks that were due earlier today, between midnight in the specified timezone and now.
+    """
+    now = datetime.now(pytz.timezone(timezone_str))
+    lastnight_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    return get_tasks_between_dates(lastnight_midnight, now, timezone_str)
+
+def due_later_today(timezone_str: Annotated[str, "A string giving the time zone to use as a reference for 'today', eg. 'America/Los_Angeles'"] = 'UTC'):
+    """
+    Get the tasks due later today, between now and midnight in the specified timezone.
+    """
+    now = datetime.now(pytz.timezone(timezone_str))
+    lastnight_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    tonight_midnight = lastnight_midnight + timedelta(days=1)
+    return get_tasks_between_dates(now, tonight_midnight, timezone_str)
+
+def due_tomorrow(timezone_str: Annotated[str, "A string giving the time zone to use as a reference for 'today', eg. 'America/Los_Angeles'"] = 'UTC'):
+    """
+    Get the tasks due tomorrow, midnight to midnight in the specified timezone.
+    """
+    now = datetime.now(pytz.timezone(timezone_str))
+    tomorrow_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    tomorrow_end = tomorrow_midnight + timedelta(days=1)
+    return get_tasks_between_dates(tomorrow_midnight, tomorrow_end, timezone_str)
+
+def due_this_week(timezone_str: Annotated[str, "A string giving the time zone to use as a reference for 'today', eg. 'America/Los_Angeles'"] = 'UTC'):
+    """
+    Get the tasks due this week, between midnight Monday morning and midnight Sunday night in the specified timezone.
+    """
+    now = datetime.now(pytz.timezone(timezone_str))
+    lastnight_midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    start_of_this_week = lastnight_midnight - timedelta(lastnight_midnight.weekday())
+    end_of_this_week = start_of_this_week + timedelta(days=7)
+    return get_tasks_between_dates(start_of_this_week, end_of_this_week, timezone_str)
 
 def get_labels():
     board_id = utils_trello.get_board_id(board_name=BOARD_NAME)
@@ -124,7 +204,7 @@ def update_task_due_date(id: Annotated[str, 'The id of the task to update'],
     """
     Set or update the due date of a task.
     """
-    due_date_utc = convert_time_to_iso8601(updated_due_date)
+    due_date_utc = convert_time_to_iso8601_string(updated_due_date)
     return utils_trello.update_card(id=id, update_field='due', updated_value=due_date_utc)
 
 
@@ -198,7 +278,7 @@ def add_new_tasks(tasks) -> list[dict[str, Any]]:
         else:
             description = task['notes']
         label_ids = eager_get_label_ids(task['topics'])
-        due_date_utc = convert_time_to_iso8601(task['due_date'])
+        due_date_utc = convert_time_to_iso8601_string(task['due_date'])
         response = utils_trello.create_card(list_id,
                                         name=task['summary'].rstrip('.'), # no periods on the end of card names just because it looks nicer w/o them
                                         description=description,

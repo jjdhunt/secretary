@@ -48,7 +48,7 @@ def extract_tasks(message: Annotated[str, "The verbatim user message content to 
 
 def task_follow_up(tasks):
     """
-    Given a conversation with the user, ask for due dates.
+    Given tasks without due dates, ask for due dates.
     """
     global user_time_zone_global
     global convo_global
@@ -160,6 +160,12 @@ def handle_message(user_name, message_text, say=None):
     if message_text.lower() == 'clear':
         convo_global.clear()
         if say: say('(My mind is a blank slate)')
+        return
+    
+    if message_text.lower() == 'overdue':
+        msg = f"From {user_name}:\nWhat tasks are overdue?"
+        convo_global.add_message('user', msg)
+        say_card_links(say, tasks.overdue(), "This is the only overdue task:", "These tasks are overdue:")
         return
 
     # say("(I hear you, let me think...)")
