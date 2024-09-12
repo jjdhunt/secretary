@@ -21,6 +21,8 @@ app = App(token=os.environ['SLACK_BOT_TOKEN'])
 
 convo_global = ai.Messages()
 user_time_zone_global = 'UTC'
+user_id_global = None
+user_name_global = None
 
 def extract_tasks_base(message: Annotated[str, "The message content to extract tasks from."],
                        current_user_local_time: Annotated[str, "The user's local datetime formatted as '%Y-%m-%d %H:%M:%S %z'"]) -> list[Any]:
@@ -141,19 +143,45 @@ def format_card_links(cards) -> str:
         return "\n".join(card_links)
     return ""
 
-def say_card_links(say, cards, comment_single: str = "", comment_multiple: str = ""):
+def card_link_description(cards, comment_single: str = "", comment_multiple: str = ""):
     card_links = format_card_links(cards)
     if len(cards)==1:
         if comment_single == "":
-            say_on_the_record(say, card_links)
+            return card_links
         else:
-            say_on_the_record(say, f"{comment_single}\n" + card_links)
+            return f"{comment_single}\n" + card_links
     elif len(cards)>1:
         if comment_multiple == "":
-            say_on_the_record(say, card_links)
+            return card_links
         else:
-            say_on_the_record(say, f"{comment_multiple}\n"  + card_links)
+            return f"{comment_multiple}\n"  + card_links
+    return ""
 
+
+def task_update():
+    """
+    Send an update to the user (the global user_id_global) about the status of their tasks
+    due today and overdue.
+    """
+    global user_id_global
+    global user_name_global
+    due_later_today = tasks.due_later_today()
+    overdue = tasks.overdue()
+    app.client.chat_postMessage(channel=user_id_global, text=f"Good morning {user_name_global}!")
+    if (len(due_later_today) == 0) & (len(overdue) == 0):
+        msg = f"Relax, you don't have anything to do today :beach_with_umbrella:"
+    else: 
+        if len(due_later_today) > 0:
+            msg = card_link_description(due_later_today,
+                                        f"You have only this one task to do later today:",
+                                        f"You have these tasks to do later today:")
+            app.client.chat_postMessage(channel=user_id_global, text=msg)
+        if len(overdue) > 0:
+            msg = card_link_description(overdue,
+                                        f"Just a reminder, you have only this one overdue task...",
+                                        f"Just a reminder, you have these overdue tasks...")
+            app.client.chat_postMessage(channel=user_id_global, text=msg)
+    
 def handle_message(user_name, message_text, say=None):
     global convo_global
 
@@ -163,9 +191,10 @@ def handle_message(user_name, message_text, say=None):
         return
     
     if message_text.lower() == 'overdue':
-        msg = f"From {user_name}:\nWhat tasks are overdue?"
-        convo_global.add_message('user', msg)
-        say_card_links(say, tasks.overdue(), "This is the only overdue task:", "These tasks are overdue:")
+        # msg = f"From {user_name}:\nWhat tasks are overdue?"
+        # convo_global.add_message('user', msg)
+        # card_link_description(say, tasks.overdue(), "This is the only overdue task:", "These tasks are overdue:")
+        task_update()
         return
 
     # say("(I hear you, let me think...)")
@@ -184,9 +213,12 @@ def handle_message(user_name, message_text, say=None):
     say_on_the_record(say, response)
 
     # Tell the user about completed, updated, and created tasks
-    say_card_links(say, done_cards, "Great! I marked this task as done (and deleted it):", "Cool, I marked these tasks as done (and deleted them):")
-    say_card_links(say, updated_cards, "I updated this task:", "I updated these tasks:")
-    say_card_links(say, created_cards, "I created this task:", "I created these tasks:")
+    card_description = card_link_description(done_cards, "Great! I marked this task as done (and deleted it):", "Cool, I marked these tasks as done (and deleted them):")
+    say_on_the_record(say, card_description)
+    card_description = card_link_description(updated_cards, "I updated this task:", "I updated these tasks:")
+    say_on_the_record(say, card_description)
+    card_description = card_link_description(created_cards, "I created this task:", "I created these tasks:")
+    say_on_the_record(say, card_description)
 
     # Follow up on tasks with no due date
     cards_without_due_dates = [card for card in updated_cards if card['due'] is None] + [card for card in created_cards if card['due'] is None]
@@ -203,14 +235,17 @@ def handle_message(user_name, message_text, say=None):
 @app.event("message")
 def handle_message_events(body, say):
     global user_time_zone_global
+    global user_id_global
+    global user_name_global
 
     if 'text' not in body['event']:
         return
     
-    user_name = get_user_name(body['event']['user'])
+    user_id_global = body['event']['user']
+    user_name_global = get_user_name(body['event']['user'])
     user_time_zone_global = get_user_timezone(body['event']['user'])
 
-    handle_message(user_name,
+    handle_message(user_name_global,
                    body['event']['text'],
                    say)
 
