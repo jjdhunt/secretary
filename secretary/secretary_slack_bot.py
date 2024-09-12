@@ -4,6 +4,8 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime
 import pytz
+import threading
+import time
 from typing import Annotated, Any
 
 import json
@@ -158,7 +160,7 @@ def card_link_description(cards, comment_single: str = "", comment_multiple: str
     return ""
 
 
-def task_update():
+def morning_push_update():
     """
     Send an update to the user (the global user_id_global) about the status of their tasks
     due today and overdue.
@@ -182,19 +184,25 @@ def task_update():
                                         f"Just a reminder, you have these overdue tasks...")
             app.client.chat_postMessage(channel=user_id_global, text=msg)
     
+def evening_push_update():
+    """
+    Send an update to the user (the global user_id_global) about the status of their work today.
+    """
+    app.client.chat_postMessage(channel=user_id_global, text=f"Good night {user_name_global} :yawning_face:, really nice work today.")
+
 def handle_message(user_name, message_text, say=None):
     global convo_global
 
-    if message_text.lower() == 'clear':
+    if message_text.strip().lower() == 'clear':
         convo_global.clear()
         if say: say('(My mind is a blank slate)')
         return
     
-    if message_text.lower() == 'overdue':
+    if message_text.strip().lower() == 'overdue':
         # msg = f"From {user_name}:\nWhat tasks are overdue?"
         # convo_global.add_message('user', msg)
         # card_link_description(say, tasks.overdue(), "This is the only overdue task:", "These tasks are overdue:")
-        task_update()
+        morning_push_update()
         return
 
     # say("(I hear you, let me think...)")
@@ -249,6 +257,25 @@ def handle_message_events(body, say):
                    body['event']['text'],
                    say)
 
+def scheduled_daily_function_execution(target_time: str, fcn: callable):
+    """Run a task function every day at the target time (HH:MM) in the specified time zone."""
+    print(f"The function {fcn} will be run everyday at {target_time}")
+    while True:
+        # Get the current time in the user's time zone
+        current_user_local_time = datetime.now(pytz.timezone(user_time_zone_global))
+        if current_user_local_time.strftime("%H:%M") == target_time:
+            fcn()  # Execute the function
+            time.sleep(60)  # Avoid multiple executions within the same minute
+        time.sleep(30)  # Check every 30 seconds
+
 if __name__ == "__main__":
+    # Start the scheduling thread with time zone support
+    morning_push_update_thread = threading.Thread(target=scheduled_daily_function_execution, args=("07:00", morning_push_update), daemon=True)
+    evening_push_update_thread = threading.Thread(target=scheduled_daily_function_execution, args=("22:30", evening_push_update), daemon=True)
+    
+    morning_push_update_thread.start()
+    evening_push_update_thread.start()
+
+    # Start the Slack app
     handler = SocketModeHandler(app, os.environ['SLACK_APP_TOKEN'])
     handler.start()
