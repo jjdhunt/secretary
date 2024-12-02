@@ -1,6 +1,6 @@
 A secretary you can work with in Slack. Secretary can extract action items and todo's from text you provide it and will create Trello cards for each task. You can them ask Secretary questions about cards and have it update the card contents, due date, completion status, and all other metadata.
 
-# Developer Instructions
+# Setup
 ## Secrets
 All secrets should go in a .env file in the project's top-level directory.
 
@@ -29,3 +29,6 @@ TRELLO_OAUTH_TOKEN=your_oauth_token
 ```
 - [Managing API Key](https://developer.atlassian.com/cloud/trello/guides/rest-api/api-introduction/#managing-your-api-key) 
 - After creating a Power Up, go to its API Key page where you will find the API Key, the API Secret, and a link to generate a user OAuth Token.
+
+# Run the secretary
+`python ./secretary/secretary_slack_bot.py`
