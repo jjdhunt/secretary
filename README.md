@@ -1,3 +1,5 @@
+A secretary you can work with in Slack. Secretary can extract action items and todo's from text you provide it and will create Trello cards for each task. You can them ask Secretary questions about cards and have it update the card contents, due date, completion status, and all other metadata.
+
 # Developer Instructions
 ## Secrets
 All secrets should go in a .env file in the project's top-level directory.
