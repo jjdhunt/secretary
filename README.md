@@ -14,7 +14,7 @@ In the .env file you should define these [token types](https://api.slack.com/con
 SLACK_APP_TOKEN=xapp-your_slack_app_token
 SLACK_BOT_TOKEN=xoxb-your_slack_bot_token
 ```
-- Create a new slack app by going to your (slack apps page)[https://api.slack.com/apps] where you will find a button/link to create a new app.
+- Create a new slack app by going to your [slack apps page](https://api.slack.com/apps) where you will find a button/link to create a new app.
 - On the App's page, find the App-Level Tokens and give your app the `[connections:write]` scope. Then you can copy the app-level token with this scope. App-level tokens start with `xapp-`.
 - Once you've created the app and given it the necessary permission scope, install it in your workspace. Then you can find the bot token on the bot's Install App tab or the OAuth & Permissions tab. Bot tokens start with `xoxb-`.
 
